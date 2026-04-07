@@ -41,6 +41,7 @@ def _build_ydl_opts(quality: str, output_dir: str) -> dict:
     opts = _base_opts(output_dir)
     opts["format"] = fmt
     opts["merge_output_format"] = "mp4"
+    opts["postprocessor_args"] = ["-movflags", "+faststart"]
     return opts
 
 

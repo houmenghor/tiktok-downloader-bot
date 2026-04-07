@@ -94,12 +94,9 @@ class Msg:
         )
 
     def queued(self, count: int, quality: str, position: int) -> str:
-        noun = "link" if count == 1 else "links"
         return self._p(
-            f"✅ *{count}* {noun} added to queue at *{quality}*.\n"
-            f"Queue size: *{position}* job(s). I'll send videos as they finish.",
-            f"✅ *{count}* link បានបន្ថែម ជាមួយ *{quality}*.\n"
-            f"Queue: *{position}* job(s). ខ្ញុំនឹង send វីដេអូពេលរួចរាល់។",
+            f"✅ Got it\! Downloading at *{quality}* — I'll send it when it's ready.",
+            f"✅ បានទទួល\! កំពុង download *{quality}* — ខ្ញុំនឹង send ពេលរួចរាល់។",
         )
 
     # Download progress
