@@ -1,13 +1,15 @@
 # ── Stage 1: base ─────────────────────────────────────────────────────────────
-# Alpine is ~50 MB vs ~130 MB for slim. Uses musl libc — fully compatible here.
 FROM python:3.12-alpine AS base
 
-# Install ffmpeg + build deps for any C-extension pip packages
+# ca-certificates + openssl fix MongoDB Atlas TLS on Alpine musl
 RUN apk add --no-cache \
         ffmpeg \
         gcc \
         musl-dev \
-        libffi-dev
+        libffi-dev \
+        ca-certificates \
+        openssl \
+    && update-ca-certificates
 
 WORKDIR /app
 
@@ -30,7 +32,7 @@ ENV FFPROBE_PATH=ffprobe
 # Temp download directory (overridable at runtime)
 ENV DOWNLOAD_DIR=/tmp/tiktok_downloads
 
-# Non-root user for security (Alpine uses adduser, not useradd)
+# Non-root user for security (Alpine uses adduser)
 RUN adduser -D -u 1000 botuser && chown -R botuser /app
 USER botuser
 
