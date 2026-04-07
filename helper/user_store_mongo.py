@@ -17,6 +17,7 @@ Collection schema (one document per user):
 import logging
 from datetime import datetime, timezone
 
+import certifi
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from config.settings import settings
@@ -29,7 +30,7 @@ _client: AsyncIOMotorClient | None = None
 def _db():
     global _client
     if _client is None:
-        _client = AsyncIOMotorClient(settings.mongo_uri)
+        _client = AsyncIOMotorClient(settings.mongo_uri, tlsCAFile=certifi.where())
     return _client["tiktok_bot"]["users"]
 
 
