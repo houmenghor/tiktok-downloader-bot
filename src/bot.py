@@ -138,6 +138,11 @@ def _make_process_job(bot_app: Application):
                             supports_streaming=True,
                         )
                     cleanup_files(files)
+                    await bot.send_message(
+                        chat_id=job.chat_id,
+                        text=msg.SAVE_TIP,
+                        parse_mode="Markdown",
+                    )
                 else:
                     await bot.send_message(
                         chat_id=job.chat_id,
@@ -152,6 +157,11 @@ def _make_process_job(bot_app: Application):
                                 supports_streaming=True,
                             )
                     cleanup_files(files)
+                    await bot.send_message(
+                        chat_id=job.chat_id,
+                        text=msg.SAVE_TIP,
+                        parse_mode="Markdown",
+                    )
 
         except Exception as exc:
             logger.exception("process_job failed for %s: %s", job.job_id, exc)

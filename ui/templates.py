@@ -119,6 +119,13 @@ class Msg:
             f"📦 {label} ធំ — កំពុង send ជា {total_parts} ផ្នែក។",
         )
 
+    @property
+    def SAVE_TIP(self) -> str:
+        return self._p(
+            "💡 _Tip: If the video lags in Telegram, save it to your phone — it will play smoothly._",
+            "💡 _គន្លឹះ: បើវីដេអូទាក់ក្នុង Telegram សូម save មកទូរស័ព្ទ — វានឹងរលូននៅក្នុង Gallery។_",
+        )
+
     def video_caption(self, label: str, quality: str) -> str:
         return f"✅ {label} ({quality})"
 
