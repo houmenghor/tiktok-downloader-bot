@@ -1,0 +1,15 @@
+services:
+  tiktok-bot:
+    build: .
+    image: tiktok-bot:latest
+    container_name: tiktok-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Override Windows .exe paths — use system ffmpeg inside Alpine container
+      FFMPEG_PATH: ffmpeg
+      FFPROBE_PATH: ffprobe
+    volumes:
+      # Persist downloaded files across restarts (optional — files are deleted after send)
+      - /tmp/tiktok_downloads:/tmp/tiktok_downloads
