@@ -30,6 +30,9 @@ class DownloadJob:
     label: str                           # e.g. "Link 3/10"
     callback: Callable[["DownloadJob"], Awaitable[None]] = field(repr=False)
     job_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
+    # If True: save file to save_dir locally; do NOT upload to Telegram chat
+    save_locally: bool = False
+    save_dir: str | None = None          # target folder when save_locally=True
 
 
 class DownloadQueue:

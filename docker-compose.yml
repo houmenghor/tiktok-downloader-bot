@@ -10,6 +10,13 @@ services:
       # Override Windows .exe paths — use system ffmpeg inside Alpine container
       FFMPEG_PATH: ffmpeg
       FFPROBE_PATH: ffprobe
+      # JSON user data stored in named volume — survives docker compose up --build
+      USERS_FILE: /data/users.json
     volumes:
-      # Persist downloaded files across restarts (optional — files are deleted after send)
+      # Named volume — persists users.json across rebuilds and restarts
+      - bot_data:/data
+      # Temp download directory
       - /tmp/tiktok_downloads:/tmp/tiktok_downloads
+
+volumes:
+  bot_data:   # managed by Docker, survives: docker compose up --build

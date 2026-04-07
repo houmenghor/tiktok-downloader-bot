@@ -6,6 +6,8 @@ services:
     dockerContext: .
     plan: free
     envVars:
+      - key: MONGO_URI
+        sync: false       # Set this in Render dashboard → Environment (paste your Atlas URI)
       - key: BOT_TOKEN
         sync: false       # Set this manually in Render dashboard → Environment
       - key: DOWNLOAD_DIR
