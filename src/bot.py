@@ -5,8 +5,10 @@ process_job is defined here (not in handlers) because it needs access to
 download_queue and the bot instance — both of which live at this level.
 """
 import logging
+import asyncio
 
 from telegram import Message
+from telegram import ChatAction
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -43,6 +45,15 @@ async def process_job(job: DownloadJob) -> None:
 def _make_process_job(bot_app: Application):
     """Factory that closes over the Application so the bot reference is valid."""
 
+    async def _keep_uploading(bot, chat_id: int, action, stop_event: asyncio.Event):
+        """Send chat action every 4s until stop_event is set."""
+        while not stop_event.is_set():
+            try:
+                await bot.send_chat_action(chat_id=chat_id, action=action)
+            except Exception:
+                pass
+            await asyncio.sleep(4)
+
     async def process_job(job: DownloadJob) -> None:
         bot = bot_app.bot
         lang = await get_lang(job.user_id)
@@ -63,8 +74,23 @@ def _make_process_job(bot_app: Application):
                 else get_user_download_dir(job.user_id)
             )
 
+            # Show continuous upload action while downloading
+            stop_action = asyncio.Event()
+            action = ChatAction.RECORD_VOICE if job.quality == "audio" else ChatAction.UPLOAD_VIDEO
+            action_task = asyncio.create_task(
+                _keep_uploading(bot, job.chat_id, action, stop_action)
+            )
+
+            try:
+                if job.quality == "audio":
+                    audio_path = await download_audio(job.url, output_dir)
+                else:
+                    files, content_type = await download_video(job.url, job.quality, output_dir)
+            finally:
+                stop_action.set()
+                action_task.cancel()
+
             if job.quality == "audio":
-                audio_path = await download_audio(job.url, output_dir)
                 if job.save_locally:
                     await bot.send_message(
                         chat_id=job.chat_id,
@@ -80,10 +106,7 @@ def _make_process_job(bot_app: Application):
                         )
                     cleanup_files([audio_path])
             else:
-                files, content_type = await download_video(job.url, job.quality, output_dir)
-
                 if job.save_locally:
-                    # Files stay in folder — just notify
                     await bot.send_message(
                         chat_id=job.chat_id,
                         text=msg.saved_file(job.label, output_dir),
@@ -183,6 +206,25 @@ def create_app() -> Application:
             BotCommand("stats", "Show total users and downloads"),
             BotCommand("language", "Change language / ប្ដូរភាសា"),
         ])
+        if settings.broadcast_on_start:
+            from helper.user_store import get_all_users, get_lang as _get_lang
+            users = await get_all_users()
+            logger.info("Broadcasting back-online message to %d users", len(users))
+            for user in users:
+                uid = user.get("_id") or user.get("user_id")
+                if not uid:
+                    continue
+                try:
+                    lang = await _get_lang(uid)
+                    from ui.templates import Msg as _Msg
+                    await application.bot.send_message(
+                        chat_id=uid,
+                        text=_Msg(lang).BACK_ONLINE,
+                        parse_mode="Markdown",
+                    )
+                    await asyncio.sleep(0.05)  # stay within Telegram rate limits
+                except Exception as e:
+                    logger.warning("Broadcast failed for user %s: %s", uid, e)
 
     async def on_shutdown(application: Application) -> None:
         await download_queue.stop()

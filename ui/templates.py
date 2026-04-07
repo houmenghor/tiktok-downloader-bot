@@ -42,6 +42,13 @@ class Msg:
          "📬 [t.me/houmenghor](https://t.me/houmenghor)",
         )
 
+    @property
+    def MAINTENANCE(self) -> str:
+        return self._p(
+            "🔧 *Bot is under maintenance.*\n\nPlease try again in a few minutes.",
+            "🔧 *Bot កំពុងត្រូវបានថែទាំ។*\n\nសូមព្យាយាមម្ដងទៀតក្នុងពីរបីនាទី។",
+        )
+
     def queue_size(self, size: int) -> str:
         return self._p(
             f"📋 Jobs currently in queue: *{size}*",
@@ -149,6 +156,13 @@ class Msg:
         if total == 1:
             return f"🖼 {label}"
         return f"🖼 {label} — {idx}/{total}"
+
+    @property
+    def BACK_ONLINE(self) -> str:
+        return self._p(
+            "✅ *Bot is back online!*\n\nSorry for the wait — everything is working normally now. Send me a TikTok link to get started! 🎉",
+            "✅ *Bot បានត្រលប់មកវិញហើយ!*\n\nសូមអភ័យទោសចំពោះការរង់ចាំ — អ្វីៗដំណើរការធម្មតាហើយ។ ផ្ញើ TikTok link មកខ្ញុំបានហើយ! 🎉",
+        )
 
     # Language
     @property

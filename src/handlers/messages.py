@@ -11,7 +11,7 @@ import tempfile
 import time
 import logging
 
-from telegram import Update
+from telegram import Update, ChatAction
 from telegram.ext import ContextTypes
 
 from config.settings import settings
@@ -69,10 +69,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     links = extract_links(text)
     user_id = update.effective_user.id
     msg = Msg(await get_lang(user_id))
+    if settings.maintenance:
+        await update.message.reply_text(msg.MAINTENANCE, parse_mode="Markdown")
+        return
     if not links:
         await update.message.reply_text(msg.NO_LINKS_FOUND)
         return
 
+    await update.message.reply_chat_action(ChatAction.TYPING)
     _store_pending(user_id, links)
     await update.message.reply_text(
         msg.links_found(len(links), source="message"),
@@ -86,6 +90,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     doc = update.message.document
     user_id = update.effective_user.id
     msg = Msg(await get_lang(user_id))
+    if settings.maintenance:
+        await update.message.reply_text(msg.MAINTENANCE, parse_mode="Markdown")
+        return
     if not doc.file_name or not doc.file_name.lower().endswith(".txt"):
         await update.message.reply_text(msg.NOT_A_TXT_FILE, parse_mode="Markdown")
         return

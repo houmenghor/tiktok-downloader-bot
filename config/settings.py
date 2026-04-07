@@ -27,6 +27,10 @@ class Settings:
     users_file: str = field(default_factory=lambda: os.getenv("USERS_FILE", "/data/users.json"))
     # MongoDB URI — if set, MongoDB is used instead of the JSON file (required on Render free)
     mongo_uri: str | None = field(default_factory=lambda: os.getenv("MONGO_URI"))
+    # Set MAINTENANCE=true on Render before redeploying to show a friendly message
+    maintenance: bool = field(default_factory=lambda: os.getenv("MAINTENANCE", "false").lower() == "true")
+    # Set BROADCAST_ON_START=true on Render when bringing the bot back online after maintenance
+    broadcast_on_start: bool = field(default_factory=lambda: os.getenv("BROADCAST_ON_START", "false").lower() == "true")
 
     @property
     def max_file_size_bytes(self) -> int:
