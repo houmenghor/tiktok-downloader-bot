@@ -32,8 +32,10 @@ def _base_opts(output_dir: str) -> dict:
 
 def _build_ydl_opts(quality: str, output_dir: str) -> dict:
     height = _HEIGHT_MAP.get(quality, "1080")
+    # Prefer h264 (avc) — universally supported by all phones without lag
     fmt = (
-        f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]"
+        f"bestvideo[height<={height}][ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]"
+        f"/bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]"
         f"/bestvideo[height<={height}]+bestaudio"
         f"/best[height<={height}][ext=mp4]"
         f"/best[ext=mp4]/best"
@@ -41,7 +43,8 @@ def _build_ydl_opts(quality: str, output_dir: str) -> dict:
     opts = _base_opts(output_dir)
     opts["format"] = fmt
     opts["merge_output_format"] = "mp4"
-    opts["postprocessor_args"] = ["-movflags", "+faststart"]
+    # Merger+ffmpeg_o applies args to the output file — required for faststart to work
+    opts["postprocessor_args"] = {"Merger+ffmpeg_o": ["-movflags", "+faststart"]}
     return opts
 
 
