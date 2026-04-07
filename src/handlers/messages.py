@@ -11,7 +11,8 @@ import tempfile
 import time
 import logging
 
-from telegram import Update, ChatAction
+from telegram import Update
+from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
 from config.settings import settings

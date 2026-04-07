@@ -1,5 +1,5 @@
 from telegram import Update
-from telegram import ChatAction
+from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
 from config.settings import settings
