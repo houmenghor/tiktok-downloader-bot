@@ -1,0 +1,22 @@
+services:
+  - type: worker          # Background Worker — never spins down, no HTTP needed
+    name: tiktok-bot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: BOT_TOKEN
+        sync: false       # Set this manually in Render dashboard → Environment
+      - key: DOWNLOAD_DIR
+        value: /tmp/tiktok_downloads
+      - key: MAX_WORKERS
+        value: 2          # Keep at 2 on free tier (limited CPU)
+      - key: MAX_FILE_SIZE_MB
+        value: 45
+      - key: SESSION_TTL
+        value: 300
+      - key: FFMPEG_PATH
+        value: ffmpeg
+      - key: FFPROBE_PATH
+        value: ffprobe
