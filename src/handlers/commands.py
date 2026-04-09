@@ -7,6 +7,13 @@ from helper.user_store import get_stats, get_lang
 from ui.templates import Msg
 
 
+async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    lang = await get_lang(update.effective_user.id)
+    msg = Msg(lang)
+    await update.message.reply_chat_action(ChatAction.TYPING)
+    await update.message.reply_text(msg.HELP, parse_mode="Markdown")
+
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     lang = await get_lang(update.effective_user.id)
     msg = Msg(lang)

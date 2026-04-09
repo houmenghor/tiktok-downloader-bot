@@ -28,7 +28,7 @@ async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_
     chat_id = update.effective_chat.id
     lang = await get_lang(user_id)
     msg = Msg(lang)
-    _quality_map = {"quality_1080p": "1080p", "quality_1440p": "1440p", "quality_audio": "audio"}
+    _quality_map = {"quality_1080p": "1080p", "quality_1440p": "1440p", "quality_2160p": "2160p", "quality_audio": "audio"}
     quality = _quality_map.get(query.data, "1080p")
 
     links = pop_pending(user_id)

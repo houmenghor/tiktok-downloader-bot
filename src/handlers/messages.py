@@ -16,8 +16,8 @@ from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
 from config.settings import settings
-from helper.link_parser import extract_links
-from helper.user_store import get_lang
+from helper.link_parser import extract_links, is_photo_url
+from helper.user_store import get_lang, record_user
 from ui.keyboards import quality_keyboard
 from ui.templates import Msg
 
@@ -78,6 +78,28 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     await update.message.reply_chat_action(ChatAction.TYPING)
+
+    # If every link is a photo/slideshow, skip quality prompt and download immediately
+    if all(is_photo_url(l) for l in links):
+        from src.bot import download_queue, process_job  # late import
+        from src.queue_manager import DownloadJob
+        await record_user(user_id, update.effective_user.username, update.effective_user.first_name or "")
+        for url in links:
+            job = DownloadJob(
+                user_id=user_id,
+                chat_id=update.effective_chat.id,
+                url=url,
+                quality="1080p",
+                label="Photo",
+                callback=process_job,
+            )
+            await download_queue.add_job(job)
+        await update.message.reply_text(
+            msg.queued_photo(len(links)),
+            parse_mode="Markdown",
+        )
+        return
+
     _store_pending(user_id, links)
     await update.message.reply_text(
         msg.links_found(len(links), source="message"),
@@ -119,6 +141,27 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     links = extract_links(content)
     if not links:
         await update.message.reply_text(msg.NO_LINKS_IN_FILE)
+        return
+
+    # If every link is a photo/slideshow, skip quality prompt
+    if all(is_photo_url(l) for l in links):
+        from src.bot import download_queue, process_job  # late import
+        from src.queue_manager import DownloadJob
+        await record_user(user_id, update.effective_user.username, update.effective_user.first_name or "")
+        for url in links:
+            job = DownloadJob(
+                user_id=user_id,
+                chat_id=update.effective_chat.id,
+                url=url,
+                quality="1080p",
+                label="Photo",
+                callback=process_job,
+            )
+            await download_queue.add_job(job)
+        await update.message.reply_text(
+            msg.queued_photo(len(links)),
+            parse_mode="Markdown",
+        )
         return
 
     _store_pending(user_id, links)

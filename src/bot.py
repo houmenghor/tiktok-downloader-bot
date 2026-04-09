@@ -63,6 +63,8 @@ def _make_process_job(bot_app: Application):
             text=(
                 msg.downloading_audio(job.label)
                 if job.quality == "audio"
+                else msg.downloading_photo(job.label)
+                if job.label == "Photo"
                 else msg.downloading(job.label, job.quality)
             ),
         )
@@ -76,7 +78,11 @@ def _make_process_job(bot_app: Application):
 
             # Show continuous upload action while downloading
             stop_action = asyncio.Event()
-            action = ChatAction.RECORD_VOICE if job.quality == "audio" else ChatAction.UPLOAD_VIDEO
+            action = (
+                ChatAction.RECORD_VOICE if job.quality == "audio"
+                else ChatAction.UPLOAD_PHOTO if job.label == "Photo"
+                else ChatAction.UPLOAD_VIDEO
+            )
             action_task = asyncio.create_task(
                 _keep_uploading(bot, job.chat_id, action, stop_action)
             )
@@ -113,35 +119,34 @@ def _make_process_job(bot_app: Application):
                         parse_mode="Markdown",
                     )
                 elif content_type == "photo":
-                    await bot.send_message(
-                        chat_id=job.chat_id,
-                        text=msg.sending_photos(job.label, len(files)),
-                    )
                     from telegram import InputMediaPhoto
-                    media = [
-                        InputMediaPhoto(
-                            media=open(p, "rb"),
-                            caption=msg.photo_caption(job.label, i, len(files)),
-                        )
-                        for i, p in enumerate(files, start=1)
-                    ]
-                    await bot.send_media_group(chat_id=job.chat_id, media=media)
-                    for m in media:
-                        m.media.close()  # type: ignore[union-attr]
+                    handles = [open(p, "rb") for p in files]
+                    try:
+                        if len(handles) == 1:
+                            await bot.send_photo(
+                                chat_id=job.chat_id,
+                                photo=handles[0],
+                            )
+                        else:
+                            media = [InputMediaPhoto(media=fh) for fh in handles]
+                            await bot.send_media_group(chat_id=job.chat_id, media=media)
+                    finally:
+                        for fh in handles:
+                            fh.close()
                     cleanup_files(files)
                 elif len(files) == 1:
                     with open(files[0], "rb") as f:
                         await bot.send_video(
                             chat_id=job.chat_id,
                             video=f,
-                            caption=msg.video_caption(job.label, job.quality),
+                            # caption=msg.video_caption(job.label, job.quality),
                             supports_streaming=True,
+                            write_timeout=120,
                         )
                     cleanup_files(files)
                     await bot.send_message(
                         chat_id=job.chat_id,
                         text=msg.SAVE_TIP,
-                        parse_mode="Markdown",
                     )
                 else:
                     await bot.send_message(
@@ -155,12 +160,12 @@ def _make_process_job(bot_app: Application):
                                 video=f,
                                 caption=msg.part_caption(job.label, idx, len(files), job.quality),
                                 supports_streaming=True,
+                                write_timeout=120,
                             )
                     cleanup_files(files)
                     await bot.send_message(
                         chat_id=job.chat_id,
                         text=msg.SAVE_TIP,
-                        parse_mode="Markdown",
                     )
 
         except Exception as exc:
@@ -181,12 +186,12 @@ def _make_process_job(bot_app: Application):
 # ── App factory ───────────────────────────────────────────────────────────────
 
 def create_app() -> Application:
-    from src.handlers.commands import cmd_start, cmd_status, cmd_stats
+    from src.handlers.commands import cmd_start, cmd_status, cmd_stats, cmd_help
     from src.handlers.messages import handle_text, handle_document
     from src.handlers.callbacks import handle_quality_callback, handle_folder_callback
     from src.handlers.language import cmd_language, handle_language_callback
 
-    app = Application.builder().token(settings.bot_token).build()
+    app = Application.builder().token(settings.bot_token).write_timeout(120).read_timeout(60).build()
 
     # Wire the real process_job closure (has bot reference)
     _process_job = _make_process_job(app)
@@ -197,6 +202,7 @@ def create_app() -> Application:
 
     # Register handlers
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CommandHandler("language", cmd_language))
@@ -212,10 +218,23 @@ def create_app() -> Application:
         from telegram import BotCommand
         await application.bot.set_my_commands([
             BotCommand("start", "Show welcome message & instructions"),
+            BotCommand("help", "How to use this bot"),
             BotCommand("status", "Show how many downloads are in progress"),
             BotCommand("stats", "Show total users and downloads"),
             BotCommand("language", "Change language / ប្ដូរភាសា"),
         ])
+
+        # SEO: set description and short description for better Telegram search visibility
+        await application.bot.set_my_description(
+            "🇰🇭 TikTok Downloader KH — Download TikTok videos & photos without watermark. "
+            "Supports 1080p, 1440p, 2160p (4K), audio only, and photo slideshows. "
+            "Fast, free, and easy to use. Send any TikTok link to get started!\n\n"
+            "ដោនឡូត TikTok វីដេអូ និងរូបភាព គ្មាន watermark។ "
+            "គាំទ្រ 1080p, 1440p, 2160p, audio និង slideshow។"
+        )
+        await application.bot.set_my_short_description(
+            "Download TikTok videos & photos without watermark — 1080p, 1440p, 4K, audio | គ្មាន watermark"
+        )
         if settings.broadcast_on_start:
             from helper.user_store import get_all_users, get_lang as _get_lang
             users = await get_all_users()

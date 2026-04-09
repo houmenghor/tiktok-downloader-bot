@@ -6,8 +6,9 @@ def quality_keyboard() -> InlineKeyboardMarkup:
     """Return the quality-selection inline keyboard."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🎬 1080p", callback_data="quality_1080p"),
-            InlineKeyboardButton("🎥 1440p", callback_data="quality_1440p"),
+            InlineKeyboardButton("1080p (HD)", callback_data="quality_1080p"),
+            InlineKeyboardButton("1440p (HD)", callback_data="quality_1440p"),
+            InlineKeyboardButton("2160p (4K)", callback_data="quality_2160p"),
         ],
         [
             InlineKeyboardButton("🎵 Audio only", callback_data="quality_audio"),

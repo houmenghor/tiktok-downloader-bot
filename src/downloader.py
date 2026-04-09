@@ -2,17 +2,20 @@ import asyncio
 import glob
 import logging
 import os
+import shutil
+import tempfile
 
 import yt_dlp
 
 from config.settings import settings
 from helper.file_utils import resolve_mp4_path, assert_file_exists
+from helper.link_parser import is_photo_url
 from helper.splitter import split_video
 
 logger = logging.getLogger(__name__)
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
-_HEIGHT_MAP = {"1080p": "1080", "1440p": "1440"}
+_HEIGHT_MAP = {"1080p": "1080", "1440p": "1440", "2160p": "2160"}
 
 
 def _base_opts(output_dir: str) -> dict:
@@ -96,6 +99,28 @@ def _collect_photo_files(output_dir: str, video_id: str) -> list[str]:
     return sorted(photos)
 
 
+def _sync_download_photos_gdl(url: str, output_dir: str) -> list[str]:
+    """Fallback photo downloader using gallery-dl Python API (handles TikTok image slideshows)."""
+    import gallery_dl.job
+    import gallery_dl.config
+    os.makedirs(output_dir, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        gallery_dl.config.set(("extractor",), "base-directory", tmp)
+        gallery_dl.config.set(("extractor",), "filename", "{id}_{num}.{extension}")
+        job = gallery_dl.job.DownloadJob(url)
+        job.run()
+        photos = []
+        for root, _dirs, files in os.walk(tmp):
+            for fname in sorted(files):
+                ext = os.path.splitext(fname)[1].lower()
+                if ext in _IMAGE_EXTS:  # skip .mp3 and other non-image files
+                    src = os.path.join(root, fname)
+                    dst = os.path.join(output_dir, fname)
+                    shutil.move(src, dst)
+                    photos.append(dst)
+    return sorted(photos)
+
+
 async def download_audio(url: str, output_dir: str) -> str:
     """Download audio only. Returns path to .mp3 file."""
     loop = asyncio.get_event_loop()
@@ -110,7 +135,23 @@ async def download_video(url: str, quality: str, output_dir: str) -> tuple[list[
     - photo: list of image paths to send as album
     """
     loop = asyncio.get_event_loop()
-    filepath, info = await loop.run_in_executor(None, _sync_download, url, quality, output_dir)
+
+    # Short-circuit: skip yt-dlp entirely for known photo/slideshow URLs
+    if is_photo_url(url):
+        photos = await loop.run_in_executor(None, _sync_download_photos_gdl, url, output_dir)
+        if photos:
+            return photos, "photo"
+
+    try:
+        filepath, info = await loop.run_in_executor(None, _sync_download, url, quality, output_dir)
+    except yt_dlp.utils.DownloadError as exc:
+        err_str = str(exc)
+        if "No video formats found" in err_str or "Unsupported URL" in err_str:
+            logger.info("yt-dlp cannot handle this URL (%s) — falling back to gallery-dl", exc)
+            photos = await loop.run_in_executor(None, _sync_download_photos_gdl, url, output_dir)
+            if photos:
+                return photos, "photo"
+        raise
 
     # Detect photo slideshow — yt-dlp downloads images instead of a video
     ext = os.path.splitext(filepath)[1].lower()

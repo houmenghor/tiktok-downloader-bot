@@ -27,3 +27,11 @@ def extract_links(text: str) -> list[str]:
 def _strip_trailing(url: str) -> str:
     """Remove trailing punctuation characters that are not part of a URL."""
     return url.rstrip(".,;:!?\"')")
+
+
+_PHOTO_PATTERN = re.compile(r"/photo/\d+", re.IGNORECASE)
+
+
+def is_photo_url(url: str) -> bool:
+    """Return True if the URL points to a TikTok photo/slideshow post."""
+    return bool(_PHOTO_PATTERN.search(url))

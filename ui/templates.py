@@ -43,6 +43,46 @@ class Msg:
         )
 
     @property
+    def HELP(self) -> str:
+        return self._p(
+            "📖 *How to use TikTok Downloader KH*\n\n"
+            "*Download a video:*\n"
+            "1\. Send a TikTok video link\n"
+            "2\. Choose quality: 1080p, 1440p, 2160p, or Audio\n"
+            "3\. Receive your file instantly\n\n"
+            "*Download photos/slideshow:*\n"
+            "Just send a TikTok photo link — no quality selection needed\n\n"
+            "*Batch download (multiple links):*\n"
+            "Send a \.txt file with one TikTok link per line\n\n"
+            "*Commands:*\n"
+            "/start — Welcome message\n"
+            "/help — Show this help\n"
+            "/status — Queue status\n"
+            "/stats — Total users & downloads\n"
+            "/language — Change language\n\n"
+            "👨\u200d💻 *Developer:* Hou Menghor\n"
+            "📬 [t\.me/houmenghor](https://t.me/houmenghor)",
+
+            "📖 *របៀបប្រើ TikTok Downloader KH*\n\n"
+            "*ដោនឡូតវីដេអូ:*\n"
+            "1\. ផ្ញើ link TikTok\n"
+            "2\. ជ្រើសគុណភាព: 1080p, 1440p, 2160p, ឬ Audio\n"
+            "3\. ទទួលឯកសារភ្លាមៗ\n\n"
+            "*ដោនឡូតរូបភាព/slideshow:*\n"
+            "ផ្ញើ TikTok photo link\n\n"
+            "*ដោនឡូតច្រើន link:*\n"
+            "ផ្ញើ file \.txt ដែលមាន link មួយក្នុងមួយបន្ទាត់\n\n"
+            "*ពាក្យបញ្ជា:*\n"
+            "/start — សារស្វាគមន៍\n"
+            "/help — បង្ហាញជំនួយ\n"
+            "/status — ស្ថានភាព queue\n"
+            "/stats — ចំនួនអ្នកប្រើ & download\n"
+            "/language — ប្ដូរភាសា\n\n"
+            "👨\u200d💻 *អ្នកបង្កើត:* ហ៊ួរ ម៉េងហ័រ\n"
+            "📬 [t\.me/houmenghor](https://t.me/houmenghor)",
+        )
+
+    @property
     def MAINTENANCE(self) -> str:
         return self._p(
             "🔧 *Bot is under maintenance.*\n\nPlease try again in a few minutes.",
@@ -102,11 +142,24 @@ class Msg:
 
     def queued(self, count: int, quality: str, position: int) -> str:
         return self._p(
-            f"✅ Got it\! Downloading at *{quality}* — I'll send it when it's ready.",
-            f"✅ បានទទួល\! កំពុង download *{quality}* — ខ្ញុំនឹង send ពេលរួចរាល់។",
+            f"✅ Got it! Downloading at *{quality}* — I'll send it when it's ready.",
+            f"✅ បានទទួល! កំពុង download *{quality}* — ខ្ញុំនឹង send ពេលរួចរាល់។",
+        )
+
+    def queued_photo(self, count: int) -> str:
+        noun = "slideshow" if count == 1 else "slideshows"
+        return self._p(
+            f"🖼 Got it! Downloading {count} photo {noun} — I'll send them when ready.",
+            f"🖼 បានទទួល! កំពុង download {count} រូបភាព — ខ្ញុំនឹង send ពេលរួចរាល់។",
         )
 
     # Download progress
+    def downloading_photo(self, label: str) -> str:
+        return self._p(
+            f"⏬ Downloading {label} (photos)...",
+            f"⏬ កំពុង download {label} (រូបភាព)...",
+        )
+
     def downloading(self, label: str, quality: str) -> str:
         return self._p(
             f"⏬ Downloading {label} ({quality})...",
@@ -122,8 +175,8 @@ class Msg:
     @property
     def SAVE_TIP(self) -> str:
         return self._p(
-            "💡 _Tip: If the video lags in Telegram, save it to your phone — it will play smoothly._",
-            "💡 _គន្លឹះ: បើវីដេអូទាក់ក្នុង Telegram សូម save មកទូរស័ព្ទ — វានឹងរលូននៅក្នុង Gallery។_",
+            "💡 Tip: If the video lags in Telegram, save it to your phone — it will play smoothly.",
+            "💡 គន្លឹះ: បើវីដេអូទាក់ក្នុង Telegram សូម save មកទូរស័ព្ទ វានឹងរលូននៅក្នុង Gallery។",
         )
 
     def video_caption(self, label: str, quality: str) -> str:
