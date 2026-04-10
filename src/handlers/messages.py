@@ -79,12 +79,28 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     await update.message.reply_chat_action(ChatAction.TYPING)
 
-    # If every link is a photo/slideshow, skip quality prompt and download immediately
-    if all(is_photo_url(l) for l in links):
+    # For each link: if URL pattern or probe says photo → skip quality prompt
+    from src.downloader import probe_url
+
+    photo_links = []
+    video_links = []
+    for url in links:
+        if is_photo_url(url):
+            photo_links.append(url)
+        else:
+            # Short URLs (vt.tiktok.com) need probing to know type
+            kind = await probe_url(url)
+            if kind == "photo":
+                photo_links.append(url)
+            else:
+                video_links.append(url)
+
+    # Enqueue photo links immediately (no quality needed)
+    if photo_links:
         from src.bot import download_queue, process_job  # late import
         from src.queue_manager import DownloadJob
         await record_user(user_id, update.effective_user.username, update.effective_user.first_name or "")
-        for url in links:
+        for url in photo_links:
             job = DownloadJob(
                 user_id=user_id,
                 chat_id=update.effective_chat.id,
@@ -95,17 +111,20 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             )
             await download_queue.add_job(job)
         await update.message.reply_text(
-            msg.queued_photo(len(links)),
+            msg.queued_photo(len(photo_links)),
             parse_mode="Markdown",
         )
-        return
 
-    _store_pending(user_id, links)
-    await update.message.reply_text(
-        msg.links_found(len(links), source="message"),
-        parse_mode="Markdown",
-        reply_markup=quality_keyboard(),
-    )
+    # Ask quality for video links
+    if video_links:
+        _store_pending(user_id, video_links)
+        await update.message.reply_text(
+            msg.links_found(len(video_links), source="message"),
+            parse_mode="Markdown",
+            reply_markup=quality_keyboard(),
+        )
+    elif not photo_links:
+        await update.message.reply_text(msg.NO_LINKS_FOUND)
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

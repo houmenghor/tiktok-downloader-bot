@@ -33,7 +33,11 @@ def _start_health_server() -> None:
 
 
 if __name__ == "__main__":
+    import asyncio
     settings.validate()
     _start_health_server()
     app = create_app()
+    # Python 3.12+ / 3.14 requires an explicit event loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     app.run_polling(drop_pending_updates=True)
