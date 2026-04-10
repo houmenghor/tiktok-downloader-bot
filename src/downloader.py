@@ -127,6 +127,32 @@ async def download_audio(url: str, output_dir: str) -> str:
     return await loop.run_in_executor(None, _sync_download_audio, url, output_dir)
 
 
+def _resolve_redirect(url: str, timeout: int = 10) -> str:
+    """Follow HTTP redirects and return the final URL without downloading the body."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.url
+    except Exception:
+        return url
+
+
+def _sync_probe(url: str) -> str:
+    """Resolve URL redirects then check the final URL. Returns 'photo' or 'video'."""
+    from helper.link_parser import is_photo_url
+    final_url = _resolve_redirect(url)
+    if is_photo_url(final_url):
+        return "photo"
+    return "video"
+
+
+async def probe_url(url: str) -> str:
+    """Async wrapper for _sync_probe. Returns 'photo' or 'video'."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_probe, url)
+
+
 async def download_video(url: str, quality: str, output_dir: str) -> tuple[list[str], str]:
     """Download a TikTok video or photo post.
 
