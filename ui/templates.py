@@ -47,9 +47,9 @@ class Msg:
         return self._p(
             "📖 *How to use TikTok Downloader KH*\n\n"
             "*Download a video:*\n"
-            "1\\. Send a TikTok video link\n"
-            "2\\. Choose quality: 1080p, 1440p, 2160p, or Audio\n"
-            "3\\. Receive your file instantly\n\n"
+            "1. Send a TikTok video link\n"
+            "2. Choose quality: 1080p, 1440p, 2160p, or Audio\n"
+            "3. Receive your file instantly\n\n"
             "*Download photos/slideshow:*\n"
             "Just send a TikTok photo link — no quality selection needed\n\n"
             "*Batch download (multiple links):*\n"
@@ -57,7 +57,7 @@ class Msg:
             "*Commands:*\n"
             "/start — Welcome message\n"
             "/help — Show this help\n"
-            "/status — Queue status\n"
+            "/status — See if your download will start now or wait\n"
             "/stats — Total users & downloads\n"
             "/language — Change language\n\n"
             "👨\u200d💻 *Developer:* Hou Menghor\n"
@@ -65,9 +65,9 @@ class Msg:
 
             "📖 *របៀបប្រើ TikTok Downloader KH*\n\n"
             "*ដោនឡូតវីដេអូ:*\n"
-            "1\\. ផ្ញើ link TikTok\n"
-            "2\\. ជ្រើសគុណភាព: 1080p, 1440p, 2160p, ឬ Audio\n"
-            "3\\. ទទួលឯកសារភ្លាមៗ\n\n"
+            "1. ផ្ញើ link TikTok\n"
+            "2. ជ្រើសគុណភាព: 1080p, 1440p, 2160p, ឬ Audio\n"
+            "3. ទទួលឯកសារភ្លាមៗ\n\n"
             "*ដោនឡូតរូបភាព/slideshow:*\n"
             "ផ្ញើ TikTok photo link\n\n"
             "*ដោនឡូតច្រើន link:*\n"
@@ -75,7 +75,7 @@ class Msg:
             "*ពាក្យបញ្ជា:*\n"
             "/start — សារស្វាគមន៍\n"
             "/help — បង្ហាញជំនួយ\n"
-            "/status — ស្ថានភាព queue\n"
+            "/status — មើលថាដោនឡូតចាប់ផ្តើមភ្លាមៗ ឬត្រូវរង់ចាំ\n"
             "/stats — ចំនួនអ្នកប្រើ & download\n"
             "/language — ប្ដូរភាសា\n\n"
             "👨\u200d💻 *អ្នកបង្កើត:* ហ៊ួរ ម៉េងហ័រ\n"
@@ -90,9 +90,16 @@ class Msg:
         )
 
     def queue_size(self, size: int) -> str:
+        if size <= 0:
+            return self._p(
+                "✅ No waiting line right now.\nIf you send a link now, your download starts immediately.",
+                "✅ ឥឡូវនេះមិនមានអ្នករង់ចាំទេ។\nបើអ្នកផ្ញើ link ឥឡូវនេះ វានឹងចាប់ផ្តើមដោនឡូតភ្លាមៗ។",
+            )
+
+        noun_en = "request" if size == 1 else "requests"
         return self._p(
-            f"📋 Jobs currently in queue: *{size}*",
-            f"📋 ចំនួន Job ក្នុង Queue: *{size}*",
+            f"⏳ There are *{size}* {noun_en} ahead of you.\nPlease wait a moment — your download will start soon.",
+            f"⏳ មាន *{size}* request នៅមុខអ្នក។\nសូមរង់ចាំបន្តិច — ការដោនឡូតរបស់អ្នកនឹងចាប់ផ្តើមឆាប់ៗ។",
         )
 
     # Link detection
@@ -176,7 +183,7 @@ class Msg:
     def SAVE_TIP(self) -> str:
         return self._p(
             "💡 Tip: If the video lags in Telegram, save it to your phone — it will play smoothly.",
-            "💡 គន្លឹះ: បើវីដេអូទាក់ក្នុង Telegram សូម save មកទូរស័ព្ទ វានឹងរលូននៅក្នុង Gallery។",
+            "💡 គន្លឹះ: បើវីដេអូទាក់ក្នុង Telegram សូម save មកទូរស័ព្ទ វានឹងដើរធម្មតា",
         )
 
     def video_caption(self, label: str, quality: str) -> str:
