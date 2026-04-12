@@ -223,18 +223,18 @@ def create_app() -> Application:
             BotCommand("stats", "Show total users and downloads"),
             BotCommand("language", "Change language / ប្ដូរភាសា"),
         ])
-
-        # SEO: set description and short description for better Telegram search visibility
-        await application.bot.set_my_description(
-            "🇰🇭 TikTok Downloader KH — Download TikTok videos & photos without watermark. "
-            "Supports 1080p, 1440p, 2160p (4K), audio only, and photo slideshows. "
-            "Fast, free, and easy to use. Send any TikTok link to get started!\n\n"
-            "ដោនឡូត TikTok វីដេអូ និងរូបភាព គ្មាន watermark។ "
-            "គាំទ្រ 1080p, 1440p, 2160p, audio និង slideshow។"
-        )
-        await application.bot.set_my_short_description(
-            "Download TikTok videos & photos without watermark — 1080p, 1440p, 4K, audio | គ្មាន watermark"
-        )
+        if settings.configure_profile_on_start:
+            # Optional: these are useful, but they add extra API round-trips on every startup.
+            await application.bot.set_my_description(
+                "🇰🇭 TikTok Downloader KH — Download TikTok videos & photos without watermark. "
+                "Supports 1080p, 1440p, 2160p (4K), audio only, and photo slideshows. "
+                "Fast, free, and easy to use. Send any TikTok link to get started!\n\n"
+                "ដោនឡូត TikTok វីដេអូ និងរូបភាព គ្មាន watermark។ "
+                "គាំទ្រ 1080p, 1440p, 2160p, audio និង slideshow។"
+            )
+            await application.bot.set_my_short_description(
+                "Download TikTok videos & photos without watermark — 1080p, 1440p, 4K, audio | គ្មាន watermark"
+            )
         if settings.broadcast_on_start:
             from helper.user_store import get_all_users, get_lang as _get_lang
             users = await get_all_users()

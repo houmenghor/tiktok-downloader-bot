@@ -14,7 +14,7 @@ logging.basicConfig(
 
 
 def _start_health_server() -> None:
-    """Bind to $PORT so Render's Web Service health-check passes."""
+    """Bind to $PORT so Render's Web Service health-check passes (polling mode)."""
     port = int(os.environ.get("PORT", 8080))
 
     class _Handler(BaseHTTPRequestHandler):
@@ -34,10 +34,25 @@ def _start_health_server() -> None:
 
 if __name__ == "__main__":
     import asyncio
+
     settings.validate()
-    _start_health_server()
     app = create_app()
     # Python 3.12+ / 3.14 requires an explicit event loop
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    app.run_polling(drop_pending_updates=True)
+
+    port = int(os.environ.get("PORT", 8080))
+    if settings.webhook_url:
+        # Webhook mode wakes quickly on Render when Telegram sends a request.
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path=settings.webhook_path,
+            webhook_url=f"{settings.webhook_url.rstrip('/')}/{settings.webhook_path.lstrip('/')}",
+            drop_pending_updates=True,
+            secret_token=settings.webhook_secret or None,
+        )
+    else:
+        # Polling fallback for local/dev usage.
+        _start_health_server()
+        app.run_polling(drop_pending_updates=True)

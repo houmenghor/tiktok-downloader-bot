@@ -31,6 +31,14 @@ class Settings:
     maintenance: bool = field(default_factory=lambda: os.getenv("MAINTENANCE", "false").lower() == "true")
     # Set BROADCAST_ON_START=true on Render when bringing the bot back online after maintenance
     broadcast_on_start: bool = field(default_factory=lambda: os.getenv("BROADCAST_ON_START", "false").lower() == "true")
+    # Telegram webhook base URL (e.g. https://your-service.onrender.com). If empty, bot uses polling.
+    webhook_url: str = field(default_factory=lambda: os.getenv("WEBHOOK_URL", "").strip())
+    # Path segment for Telegram webhook endpoint.
+    webhook_path: str = field(default_factory=lambda: os.getenv("WEBHOOK_PATH", "telegram").strip("/") or "telegram")
+    # Optional secret token for Telegram webhook verification.
+    webhook_secret: str | None = field(default_factory=lambda: os.getenv("WEBHOOK_SECRET"))
+    # Set true only when you need to refresh bot profile metadata.
+    configure_profile_on_start: bool = field(default_factory=lambda: os.getenv("CONFIGURE_PROFILE_ON_START", "false").lower() == "true")
 
     @property
     def max_file_size_bytes(self) -> int:

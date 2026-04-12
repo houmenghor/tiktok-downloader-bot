@@ -1,5 +1,5 @@
 services:
-  - type: worker          # Background Worker — never spins down, no HTTP needed
+  - type: web             # Web service + Telegram webhook for fast wake-up on demand
     name: tiktok-bot
     runtime: docker
     dockerfilePath: ./Dockerfile
@@ -10,6 +10,14 @@ services:
         sync: false       # Set this in Render dashboard → Environment (paste your Atlas URI)
       - key: BOT_TOKEN
         sync: false       # Set this manually in Render dashboard → Environment
+      - key: WEBHOOK_URL
+        sync: false       # Example: https://your-service.onrender.com (leave empty to keep polling)
+      - key: WEBHOOK_PATH
+        value: telegram
+      - key: WEBHOOK_SECRET
+        sync: false       # Optional secret token for Telegram webhook verification
+      - key: CONFIGURE_PROFILE_ON_START
+        value: false      # Avoid extra startup API calls; set true only when updating profile text
       - key: DOWNLOAD_DIR
         value: /tmp/tiktok_downloads
       - key: MAX_WORKERS
