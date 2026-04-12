@@ -44,14 +44,24 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     if settings.webhook_url:
         # Webhook mode wakes quickly on Render when Telegram sends a request.
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path=settings.webhook_path,
-            webhook_url=f"{settings.webhook_url.rstrip('/')}/{settings.webhook_path.lstrip('/')}",
-            drop_pending_updates=True,
-            secret_token=settings.webhook_secret or None,
-        )
+        try:
+            app.run_webhook(
+                listen="0.0.0.0",
+                port=port,
+                url_path=settings.webhook_path,
+                webhook_url=f"{settings.webhook_url.rstrip('/')}/{settings.webhook_path.lstrip('/')}",
+                drop_pending_updates=True,
+                secret_token=settings.webhook_secret or None,
+            )
+        except RuntimeError as exc:
+            if "python-telegram-bot[webhooks]" in str(exc):
+                logging.getLogger(__name__).warning(
+                    "Webhook extras missing; falling back to polling. Install python-telegram-bot[webhooks]."
+                )
+                _start_health_server()
+                app.run_polling(drop_pending_updates=True)
+            else:
+                raise
     else:
         # Polling fallback for local/dev usage.
         _start_health_server()

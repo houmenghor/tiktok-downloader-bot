@@ -47,13 +47,13 @@ class Msg:
         return self._p(
             "📖 *How to use TikTok Downloader KH*\n\n"
             "*Download a video:*\n"
-            "1\. Send a TikTok video link\n"
-            "2\. Choose quality: 1080p, 1440p, 2160p, or Audio\n"
-            "3\. Receive your file instantly\n\n"
+            "1\\. Send a TikTok video link\n"
+            "2\\. Choose quality: 1080p, 1440p, 2160p, or Audio\n"
+            "3\\. Receive your file instantly\n\n"
             "*Download photos/slideshow:*\n"
             "Just send a TikTok photo link — no quality selection needed\n\n"
             "*Batch download (multiple links):*\n"
-            "Send a \.txt file with one TikTok link per line\n\n"
+            "Send a \\.txt file with one TikTok link per line\n\n"
             "*Commands:*\n"
             "/start — Welcome message\n"
             "/help — Show this help\n"
@@ -61,17 +61,17 @@ class Msg:
             "/stats — Total users & downloads\n"
             "/language — Change language\n\n"
             "👨\u200d💻 *Developer:* Hou Menghor\n"
-            "📬 [t\.me/houmenghor](https://t.me/houmenghor)",
+            "📬 [t\\.me/houmenghor](https://t.me/houmenghor)",
 
             "📖 *របៀបប្រើ TikTok Downloader KH*\n\n"
             "*ដោនឡូតវីដេអូ:*\n"
-            "1\. ផ្ញើ link TikTok\n"
-            "2\. ជ្រើសគុណភាព: 1080p, 1440p, 2160p, ឬ Audio\n"
-            "3\. ទទួលឯកសារភ្លាមៗ\n\n"
+            "1\\. ផ្ញើ link TikTok\n"
+            "2\\. ជ្រើសគុណភាព: 1080p, 1440p, 2160p, ឬ Audio\n"
+            "3\\. ទទួលឯកសារភ្លាមៗ\n\n"
             "*ដោនឡូតរូបភាព/slideshow:*\n"
             "ផ្ញើ TikTok photo link\n\n"
             "*ដោនឡូតច្រើន link:*\n"
-            "ផ្ញើ file \.txt ដែលមាន link មួយក្នុងមួយបន្ទាត់\n\n"
+            "ផ្ញើ file \\.txt ដែលមាន link មួយក្នុងមួយបន្ទាត់\n\n"
             "*ពាក្យបញ្ជា:*\n"
             "/start — សារស្វាគមន៍\n"
             "/help — បង្ហាញជំនួយ\n"
@@ -79,7 +79,7 @@ class Msg:
             "/stats — ចំនួនអ្នកប្រើ & download\n"
             "/language — ប្ដូរភាសា\n\n"
             "👨\u200d💻 *អ្នកបង្កើត:* ហ៊ួរ ម៉េងហ័រ\n"
-            "📬 [t\.me/houmenghor](https://t.me/houmenghor)",
+            "📬 [t\\.me/houmenghor](https://t.me/houmenghor)",
         )
 
     @property

@@ -1,4 +1,4 @@
-python-telegram-bot==21.9
+python-telegram-bot[webhooks]==21.9
 yt-dlp
 gallery-dl
 python-dotenv
