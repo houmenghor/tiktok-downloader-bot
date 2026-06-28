@@ -17,7 +17,8 @@ WORKDIR /app
 FROM base AS deps
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir uv && \
+    uv pip install --system --no-cache -r requirements.txt
 
 # ── Stage 3: final image ──────────────────────────────────────────────────────
 FROM deps AS final
