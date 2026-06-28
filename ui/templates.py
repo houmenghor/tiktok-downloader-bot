@@ -182,8 +182,8 @@ class Msg:
     @property
     def SAVE_TIP(self) -> str:
         return self._p(
-            "💡 Tip: If the video lags in Telegram, save it to your phone — it will play smoothly.",
-            "💡 គន្លឹះ: បើវីដេអូទាក់ក្នុង Telegram សូម save មកទូរស័ព្ទ វានឹងដើរធម្មតា",
+            "💡 Tip: If the video lags or breaks in Telegram, save it to your phone — it will play smoothly.",
+            "💡 គន្លឹះ: បើវីដេអូទាក់ ឬខូចទ្រង់ទ្រាយក្នុង Telegram សូម save មកទូរស័ព្ទ វានឹងដើរធម្មតា",
         )
 
     def video_caption(self, label: str, quality: str) -> str:
