@@ -141,7 +141,7 @@ def _sync_download_audio_tikwm(url: str, output_dir: str) -> str:
 
     if data.get("code") != 0 or "data" not in data or not data["data"].get("music"):
         logger.error("TikWM API returned error or no music: %s", data)
-        raise RuntimeError("No music found via TikWM")
+        raise RuntimeError("The post is unavailable. It may have been deleted, set to private, or region-locked by the creator.")
 
     music_url = data["data"]["music"]
     video_id = data["data"].get("id", str(int(time.time())))
@@ -153,7 +153,7 @@ def _sync_download_audio_tikwm(url: str, output_dir: str) -> str:
         return music_path
     except Exception as e:
         logger.error("Failed to download music %s: %s", music_url, e)
-        raise RuntimeError("Failed to download music via TikWM")
+        raise RuntimeError("The post is unavailable. It may have been deleted, set to private, or region-locked by the creator.")
 
 async def download_audio(url: str, output_dir: str) -> str:
     """Download audio only. Returns path to .mp3 file."""
@@ -275,7 +275,7 @@ async def download_video(url: str, quality: str, output_dir: str) -> tuple[list[
         tikwm_files, kind = await loop.run_in_executor(None, _sync_download_tikwm, url, output_dir)
         if tikwm_files:
             return tikwm_files, kind
-        raise yt_dlp.utils.DownloadError(f"All downloaders failed. Last yt-dlp error: {err_str}")
+        raise RuntimeError("The post is unavailable. It may have been deleted, set to private, or region-locked by the creator.")
 
     # Detect photo slideshow — yt-dlp downloads images instead of a video
     ext = os.path.splitext(filepath)[1].lower()
