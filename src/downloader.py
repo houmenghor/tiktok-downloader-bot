@@ -121,10 +121,48 @@ def _sync_download_photos_gdl(url: str, output_dir: str) -> list[str]:
     return sorted(photos)
 
 
+def _sync_download_audio_tikwm(url: str, output_dir: str) -> str:
+    """Fallback audio downloader using TikWM API."""
+    import urllib.request
+    import json
+    import time
+    import os
+
+    os.makedirs(output_dir, exist_ok=True)
+    api_url = f"https://www.tikwm.com/api/?url={url}"
+    req = urllib.request.Request(api_url, headers={"User-Agent": "Mozilla/5.0"})
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception as e:
+        logger.error("TikWM API failed for audio: %s", e)
+        raise RuntimeError("TikWM API failed")
+
+    if data.get("code") != 0 or "data" not in data or not data["data"].get("music"):
+        logger.error("TikWM API returned error or no music: %s", data)
+        raise RuntimeError("No music found via TikWM")
+
+    music_url = data["data"]["music"]
+    video_id = data["data"].get("id", str(int(time.time())))
+    music_req = urllib.request.Request(music_url, headers={"User-Agent": "Mozilla/5.0"})
+    music_path = os.path.join(output_dir, f"{video_id}.mp3")
+    try:
+        with urllib.request.urlopen(music_req, timeout=30) as m_resp, open(music_path, "wb") as f:
+            f.write(m_resp.read())
+        return music_path
+    except Exception as e:
+        logger.error("Failed to download music %s: %s", music_url, e)
+        raise RuntimeError("Failed to download music via TikWM")
+
 async def download_audio(url: str, output_dir: str) -> str:
     """Download audio only. Returns path to .mp3 file."""
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _sync_download_audio, url, output_dir)
+    try:
+        return await loop.run_in_executor(None, _sync_download_audio, url, output_dir)
+    except Exception as exc:
+        logger.info("yt-dlp failed to download audio (%s) — falling back to TikWM", exc)
+        return await loop.run_in_executor(None, _sync_download_audio_tikwm, url, output_dir)
 
 
 def _resolve_redirect(url: str, timeout: int = 10) -> str:
@@ -145,6 +183,60 @@ def _sync_probe(url: str) -> str:
     if is_photo_url(final_url):
         return "photo"
     return "video"
+
+
+def _sync_download_tikwm(url: str, output_dir: str) -> tuple[list[str], str]:
+    """Fallback downloader using TikWM API."""
+    import urllib.request
+    import json
+    import time
+
+    os.makedirs(output_dir, exist_ok=True)
+    api_url = f"https://www.tikwm.com/api/?url={url}"
+    req = urllib.request.Request(api_url, headers={"User-Agent": "Mozilla/5.0"})
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception as e:
+        logger.error("TikWM API failed: %s", e)
+        return [], ""
+
+    if data.get("code") != 0 or "data" not in data:
+        logger.error("TikWM API returned error: %s", data)
+        return [], ""
+
+    post_data = data["data"]
+    video_id = post_data.get("id", str(int(time.time())))
+
+    if post_data.get("images"):
+        photos = []
+        for i, img_url in enumerate(post_data["images"]):
+            img_req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0"})
+            ext = img_url.split("?")[0].split(".")[-1]
+            if len(ext) > 4: ext = "jpg"
+            img_path = os.path.join(output_dir, f"{video_id}_{i}.{ext}")
+            try:
+                with urllib.request.urlopen(img_req, timeout=15) as img_resp, open(img_path, "wb") as f:
+                    f.write(img_resp.read())
+                photos.append(img_path)
+            except Exception as e:
+                logger.error("Failed to download image %s: %s", img_url, e)
+        if photos:
+            return photos, "photo"
+
+    elif post_data.get("play"):
+        video_url = post_data.get("hdplay") or post_data.get("play")
+        vid_req = urllib.request.Request(video_url, headers={"User-Agent": "Mozilla/5.0"})
+        vid_path = os.path.join(output_dir, f"{video_id}.mp4")
+        try:
+            with urllib.request.urlopen(vid_req, timeout=30) as vid_resp, open(vid_path, "wb") as f:
+                f.write(vid_resp.read())
+            return [vid_path], "video"
+        except Exception as e:
+            logger.error("Failed to download video %s: %s", video_url, e)
+
+    return [], ""
 
 
 async def probe_url(url: str) -> str:
@@ -170,14 +262,20 @@ async def download_video(url: str, quality: str, output_dir: str) -> tuple[list[
 
     try:
         filepath, info = await loop.run_in_executor(None, _sync_download, url, quality, output_dir)
-    except yt_dlp.utils.DownloadError as exc:
+        # If yt-dlp only downloaded audio (due to anti-bot restrictions), force the fallback
+        if os.path.splitext(filepath)[1].lower() in {".mp3", ".m4a", ".wav", ".aac", ".weba"}:
+            raise RuntimeError("yt-dlp returned an audio file instead of a video (bot protection)")
+    except Exception as exc:
         err_str = str(exc)
-        if "No video formats found" in err_str or "Unsupported URL" in err_str:
-            logger.info("yt-dlp cannot handle this URL (%s) — falling back to gallery-dl", exc)
-            photos = await loop.run_in_executor(None, _sync_download_photos_gdl, url, output_dir)
-            if photos:
-                return photos, "photo"
-        raise
+        logger.info("yt-dlp failed (%s) — falling back to gallery-dl", exc)
+        photos = await loop.run_in_executor(None, _sync_download_photos_gdl, url, output_dir)
+        if photos:
+            return photos, "photo"
+        logger.info("gallery-dl also failed, falling back to TikWM API")
+        tikwm_files, kind = await loop.run_in_executor(None, _sync_download_tikwm, url, output_dir)
+        if tikwm_files:
+            return tikwm_files, kind
+        raise yt_dlp.utils.DownloadError(f"All downloaders failed. Last yt-dlp error: {err_str}")
 
     # Detect photo slideshow — yt-dlp downloads images instead of a video
     ext = os.path.splitext(filepath)[1].lower()
