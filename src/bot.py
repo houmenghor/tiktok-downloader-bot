@@ -170,15 +170,22 @@ def _make_process_job(bot_app: Application):
 
         except Exception as exc:
             logger.exception("process_job failed for %s: %s", job.job_id, exc)
-            await bot.send_message(
-                chat_id=job.chat_id,
-                text=msg.download_failed(job.label, str(exc)),
-            )
-        finally:
             try:
-                await status_msg.delete()
+                # Transform the "Got it!" message directly into the Error message
+                await status_msg.edit_text(text=msg.download_failed(job.label, str(exc)))
+                status_msg = None  # Prevent deletion in finally block
             except Exception:
-                pass
+                # Fallback just in case editing fails
+                await bot.send_message(
+                    chat_id=job.chat_id,
+                    text=msg.download_failed(job.label, str(exc)),
+                )
+        finally:
+            if status_msg is not None:
+                try:
+                    await status_msg.delete()
+                except Exception:
+                    pass
 
     return process_job
 
