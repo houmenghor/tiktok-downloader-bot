@@ -51,7 +51,7 @@ class Msg:
             "2. Choose quality: 1080p, 1440p, 2160p, or Audio\n"
             "3. Receive your file instantly\n\n"
             "*Download photos/slideshow:*\n"
-            "Just send a TikTok photo link — no quality selection needed\n\n"
+            "Send a TikTok photo link — choose Photos, Audio, or Photos + Audio\n\n"
             "*Batch download (multiple links):*\n"
             "Send a \\.txt file with one TikTok link per line\n\n"
             "*Commands:*\n"
@@ -69,7 +69,7 @@ class Msg:
             "2. ជ្រើសគុណភាព: 1080p, 1440p, 2160p, ឬ Audio\n"
             "3. ទទួលឯកសារភ្លាមៗ\n\n"
             "*ដោនឡូតរូបភាព/slideshow:*\n"
-            "ផ្ញើ TikTok photo link\n\n"
+            "ផ្ញើ TikTok photo link — ជ្រើស Photos, Audio, ឬ Photos + Audio\n\n"
             "*ដោនឡូតច្រើន link:*\n"
             "ផ្ញើ file \\.txt ដែលមាន link មួយក្នុងមួយបន្ទាត់\n\n"
             "*ពាក្យបញ្ជា:*\n"
@@ -139,6 +139,14 @@ class Msg:
             f"{icon} រកឃើញ *{count}* link។ ជ្រើសគុណភាព download:",
         )
 
+    def photo_links_found(self, count: int, source: str = "message") -> str:
+        noun = "photo post" if count == 1 else "photo posts"
+        icon = "📄" if source == "file" else "🖼"
+        return self._p(
+            f"{icon} Found *{count}* {noun}. Choose download format:",
+            f"{icon} រកឃើញ *{count}* photo link។ ជ្រើស download format:",
+        )
+
     # Queue feedback
     @property
     def SESSION_EXPIRED(self) -> str:
@@ -148,13 +156,28 @@ class Msg:
         )
 
     def queued(self, count: int, quality: str, position: int) -> str:
+        quality_label = {
+            "photo": "Photos",
+            "photo_both": "Photos + Audio",
+            "audio": "Audio",
+        }.get(quality, quality)
         return self._p(
-            f"✅ Got it! Downloading at *{quality}* — I'll send it when it's ready.",
-            f"✅ បានទទួល! កំពុង download *{quality}* — ខ្ញុំនឹង send ពេលរួចរាល់។",
+            f"✅ Got it! Downloading at *{quality_label}* — I'll send it when it's ready.",
+            f"✅ បានទទួល! កំពុង download *{quality_label}* — ខ្ញុំនឹង send ពេលរួចរាល់។",
         )
 
-    def queued_photo(self, count: int) -> str:
+    def queued_photo(self, count: int, format_type: str = "photo") -> str:
         noun = "slideshow" if count == 1 else "slideshows"
+        if format_type == "audio":
+            return self._p(
+                "🎵 Got it! Downloading audio — I'll send it when ready.",
+                "🎵 បានទទួល! កំពុង download audio — ខ្ញុំនឹង send ពេលរួចរាល់។",
+            )
+        if format_type == "photo_both":
+            return self._p(
+                f"📦 Got it! Downloading {count} photo {noun} + audio — I'll send them when ready.",
+                f"📦 បានទទួល! កំពុង download {count} រូបភាព + audio — ខ្ញុំនឹង send ពេលរួចរាល់។",
+            )
         return self._p(
             f"🖼 Got it! Downloading {count} photo {noun} — I'll send them when ready.",
             f"🖼 បានទទួល! កំពុង download {count} រូបភាព — ខ្ញុំនឹង send ពេលរួចរាល់។",
@@ -165,6 +188,12 @@ class Msg:
         return self._p(
             f"⏬ Downloading {label} (photos)...",
             f"⏬ កំពុង download {label} (រូបភាព)...",
+        )
+
+    def downloading_photo_both(self, label: str) -> str:
+        return self._p(
+            f"⏬ Downloading {label} (photos + audio)...",
+            f"⏬ កំពុង download {label} (រូបភាព + audio)...",
         )
 
     def downloading(self, label: str, quality: str) -> str:

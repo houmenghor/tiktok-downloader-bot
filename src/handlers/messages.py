@@ -18,25 +18,29 @@ from telegram.ext import ContextTypes
 from config.settings import settings
 from helper.link_parser import extract_links, is_photo_url
 from helper.user_store import get_lang, record_user
-from ui.keyboards import quality_keyboard
+from ui.keyboards import quality_keyboard, photo_keyboard
 from ui.templates import Msg
 
 logger = logging.getLogger(__name__)
 
-# pending[user_id] = (links: list[str], timestamp: float)
-_pending: dict[int, tuple[list[str], float]] = {}
+# pending[(user_id, kind)] = (links: list[str], timestamp: float)
+_pending: dict[tuple[int, str], tuple[list[str], float]] = {}
 
 # pending_save[user_id] = (links, quality, timestamp) — waiting for folder pick
 _pending_save: dict[int, tuple[list[str], str, float]] = {}
 
 
-def _store_pending(user_id: int, links: list[str]) -> None:
-    _pending[user_id] = (links, time.monotonic())
+def _store_pending(user_id: int, links: list[str], kind: str = "video") -> None:
+    _pending[(user_id, kind)] = (links, time.monotonic())
 
 
-def pop_pending(user_id: int) -> list[str] | None:
-    """Pop pending links for a user. Returns None if missing or expired."""
-    entry = _pending.pop(user_id, None)
+def pop_pending(user_id: int, kind: str | None = None) -> list[str] | None:
+    """Pop pending links for a user. If kind is given, checks that kind first."""
+    if kind:
+        entry = _pending.pop((user_id, kind), None)
+    else:
+        entry = _pending.pop((user_id, "video"), None) or _pending.pop((user_id, "photo"), None)
+
     if entry is None:
         return None
     links, timestamp = entry
@@ -65,7 +69,7 @@ def pop_pending_save(user_id: int) -> tuple[list[str], str] | None:
 # ── Handlers ─────────────────────────────────────────────────────────────────
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle a plain-text message: extract TikTok links and ask for quality."""
+    """Handle a plain-text message: extract TikTok links and ask for quality/format."""
     text = update.message.text or ""
     links = extract_links(text)
     user_id = update.effective_user.id
@@ -79,7 +83,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     await update.message.reply_chat_action(ChatAction.TYPING)
 
-    # For each link: if URL pattern or probe says photo → skip quality prompt
+    # For each link: if URL pattern or probe says photo → photo_links
     from src.downloader import probe_url
 
     photo_links = []
@@ -95,29 +99,18 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             else:
                 video_links.append(url)
 
-    # Enqueue photo links immediately (no quality needed)
+    # Prompt format choice for photo posts (Photos only, Audio only, Photos + Audio)
     if photo_links:
-        from src.bot import download_queue, process_job  # late import
-        from src.queue_manager import DownloadJob
-        await record_user(user_id, update.effective_user.username, update.effective_user.first_name or "")
-        for url in photo_links:
-            job = DownloadJob(
-                user_id=user_id,
-                chat_id=update.effective_chat.id,
-                url=url,
-                quality="1080p",
-                label="Photo",
-                callback=process_job,
-            )
-            await download_queue.add_job(job)
+        _store_pending(user_id, photo_links, kind="photo")
         await update.message.reply_text(
-            msg.queued_photo(len(photo_links)),
+            msg.photo_links_found(len(photo_links), source="message"),
             parse_mode="Markdown",
+            reply_markup=photo_keyboard(),
         )
 
     # Ask quality for video links
     if video_links:
-        _store_pending(user_id, video_links)
+        _store_pending(user_id, video_links, kind="video")
         await update.message.reply_text(
             msg.links_found(len(video_links), source="message"),
             parse_mode="Markdown",
@@ -128,7 +121,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle a .txt file upload: extract links inside and ask for quality."""
+    """Handle a .txt file upload: extract links inside and ask for quality/format."""
     doc = update.message.document
     user_id = update.effective_user.id
     msg = Msg(await get_lang(user_id))
@@ -162,28 +155,17 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.message.reply_text(msg.NO_LINKS_IN_FILE)
         return
 
-    # If every link is a photo/slideshow, skip quality prompt
+    # If every link is a photo/slideshow, prompt format selection
     if all(is_photo_url(l) for l in links):
-        from src.bot import download_queue, process_job  # late import
-        from src.queue_manager import DownloadJob
-        await record_user(user_id, update.effective_user.username, update.effective_user.first_name or "")
-        for url in links:
-            job = DownloadJob(
-                user_id=user_id,
-                chat_id=update.effective_chat.id,
-                url=url,
-                quality="1080p",
-                label="Photo",
-                callback=process_job,
-            )
-            await download_queue.add_job(job)
+        _store_pending(user_id, links, kind="photo")
         await update.message.reply_text(
-            msg.queued_photo(len(links)),
+            msg.photo_links_found(len(links), source="file"),
             parse_mode="Markdown",
+            reply_markup=photo_keyboard(),
         )
         return
 
-    _store_pending(user_id, links)
+    _store_pending(user_id, links, kind="video")
     await update.message.reply_text(
         msg.links_found(len(links), source="file"),
         parse_mode="Markdown",

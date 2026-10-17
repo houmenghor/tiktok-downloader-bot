@@ -31,7 +31,7 @@ async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_
     _quality_map = {"quality_1080p": "1080p", "quality_1440p": "1440p", "quality_2160p": "2160p", "quality_audio": "audio"}
     quality = _quality_map.get(query.data, "1080p")
 
-    links = pop_pending(user_id)
+    links = pop_pending(user_id, kind="video")
     if not links:
         await query.edit_message_text(msg.SESSION_EXPIRED)
         return
@@ -61,6 +61,63 @@ async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_
     position = await download_queue.add_job(job)
     await query.edit_message_text(
         msg.queued(1, quality, position),
+        parse_mode="Markdown",
+    )
+
+
+async def handle_photo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """User pressed a photo format button (photos, audio, or photos+audio).
+
+    - Single link  → enqueue immediately (send to chat).
+    - Batch links  → show folder picker (save locally, no upload).
+    """
+    query = update.callback_query
+    await query.answer()
+
+    from src.bot import download_queue, process_job
+
+    user = update.effective_user
+    user_id = user.id
+    chat_id = update.effective_chat.id
+    lang = await get_lang(user_id)
+    msg = Msg(lang)
+
+    _photo_map = {
+        "photo_photos": ("photo", "Photos"),
+        "photo_audio": ("audio", "Audio"),
+        "photo_both": ("photo_both", "Photos + Audio"),
+    }
+    format_choice, label = _photo_map.get(query.data, ("photo", "Photos"))
+
+    links = pop_pending(user_id, kind="photo")
+    if not links:
+        await query.edit_message_text(msg.SESSION_EXPIRED)
+        return
+
+    await record_user(user_id, user.username, user.first_name or "")
+
+    # Batch (>1 link) → ask where to save; single link → send to chat as usual
+    if len(links) > 1:
+        store_pending_save(user_id, links, format_choice)
+        await query.edit_message_text(
+            msg.choose_folder(len(links)),
+            parse_mode="Markdown",
+            reply_markup=folder_keyboard(),
+        )
+        return
+
+    # Single link
+    job = DownloadJob(
+        user_id=user_id,
+        chat_id=chat_id,
+        url=links[0],
+        quality=format_choice,
+        label=label,
+        callback=process_job,
+    )
+    position = await download_queue.add_job(job)
+    await query.edit_message_text(
+        msg.queued_photo(1, format_choice),
         parse_mode="Markdown",
     )
 

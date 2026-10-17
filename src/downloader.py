@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import dataclass
 import glob
 import logging
 import os
@@ -16,6 +17,15 @@ logger = logging.getLogger(__name__)
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 _HEIGHT_MAP = {"1080p": "1080", "1440p": "1440", "2160p": "2160"}
+
+
+@dataclass
+class AudioMetadata:
+    path: str
+    title: str = ""
+    performer: str = ""
+    duration: int = 0
+    thumbnail_path: str | None = None
 
 
 def _base_opts(output_dir: str) -> dict:
@@ -73,8 +83,33 @@ def _sync_download(url: str, quality: str, output_dir: str) -> tuple[str, dict]:
     return resolve_mp4_path(raw_path), info
 
 
-def _sync_download_audio(url: str, output_dir: str) -> str:
-    """Blocking audio extraction. Returns path to .mp3 file."""
+def _save_thumbnail(cover_url: str, output_path: str) -> str | None:
+    """Download cover image, resize/convert to 320x320 JPEG for Telegram audio player."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(cover_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = resp.read()
+        try:
+            from PIL import Image
+            import io
+            img = Image.open(io.BytesIO(data))
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            img.thumbnail((320, 320))
+            img.save(output_path, "JPEG", quality=85)
+            return output_path
+        except Exception:
+            with open(output_path, "wb") as f:
+                f.write(data)
+            return output_path
+    except Exception as e:
+        logger.warning("Failed to save audio thumbnail from %s: %s", cover_url, e)
+        return None
+
+
+def _sync_download_audio(url: str, output_dir: str) -> AudioMetadata:
+    """Blocking audio extraction. Returns AudioMetadata."""
     os.makedirs(output_dir, exist_ok=True)
     ydl_opts = _build_audio_opts(output_dir)
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -82,13 +117,30 @@ def _sync_download_audio(url: str, output_dir: str) -> str:
         # After postprocessor, file is .mp3
         base = os.path.join(output_dir, info["id"])
         mp3_path = base + ".mp3"
-        if os.path.exists(mp3_path):
-            return mp3_path
-        # Fallback: find any mp3 in output_dir matching id
-        matches = glob.glob(base + "*.mp3")
-        if matches:
-            return matches[0]
-        raise FileNotFoundError(f"Audio file not found after download: {base}.mp3")
+        if not os.path.exists(mp3_path):
+            matches = glob.glob(base + "*.mp3")
+            if matches:
+                mp3_path = matches[0]
+            else:
+                raise FileNotFoundError(f"Audio file not found after download: {base}.mp3")
+
+        title = info.get("track") or info.get("title") or "TikTok Audio"
+        performer = info.get("artist") or info.get("creator") or info.get("uploader") or "TikTok"
+        duration = int(info.get("duration") or 0)
+
+        thumb_path = None
+        thumb_url = info.get("thumbnail")
+        if thumb_url:
+            target_thumb = os.path.join(output_dir, f"{info['id']}_thumb.jpg")
+            thumb_path = _save_thumbnail(thumb_url, target_thumb)
+
+        return AudioMetadata(
+            path=mp3_path,
+            title=title,
+            performer=performer,
+            duration=duration,
+            thumbnail_path=thumb_path,
+        )
 
 
 def _collect_photo_files(output_dir: str, video_id: str) -> list[str]:
@@ -121,8 +173,8 @@ def _sync_download_photos_gdl(url: str, output_dir: str) -> list[str]:
     return sorted(photos)
 
 
-def _sync_download_audio_tikwm(url: str, output_dir: str) -> str:
-    """Fallback audio downloader using TikWM API."""
+def _sync_download_audio_tikwm(url: str, output_dir: str) -> AudioMetadata:
+    """Fallback audio downloader using TikWM API. Returns AudioMetadata."""
     import urllib.request
     import json
     import time
@@ -143,21 +195,44 @@ def _sync_download_audio_tikwm(url: str, output_dir: str) -> str:
         logger.error("TikWM API returned error or no music: %s", data)
         raise RuntimeError("The post is unavailable. It may have been deleted, set to private, or region-locked by the creator.")
 
-    music_url = data["data"]["music"]
-    video_id = data["data"].get("id", str(int(time.time())))
+    post_data = data["data"]
+    music_url = post_data["music"]
+    music_info = post_data.get("music_info") or {}
+    video_id = post_data.get("id", str(int(time.time())))
     music_req = urllib.request.Request(music_url, headers={"User-Agent": "Mozilla/5.0"})
     music_path = os.path.join(output_dir, f"{video_id}.mp3")
     try:
         with urllib.request.urlopen(music_req, timeout=30) as m_resp, open(music_path, "wb") as f:
             f.write(m_resp.read())
-        return music_path
     except Exception as e:
         logger.error("Failed to download music %s: %s", music_url, e)
         raise RuntimeError("The post is unavailable. It may have been deleted, set to private, or region-locked by the creator.")
 
-async def download_audio(url: str, output_dir: str) -> str:
-    """Download audio only. Returns path to .mp3 file."""
+    title = music_info.get("title") or post_data.get("title") or "TikTok Audio"
+    performer = music_info.get("author") or (post_data.get("author") or {}).get("nickname") or "TikTok"
+    duration = int(music_info.get("duration") or post_data.get("duration") or 0)
+
+    thumb_path = None
+    cover_url = music_info.get("cover") or post_data.get("cover")
+    if cover_url:
+        target_thumb = os.path.join(output_dir, f"{video_id}_thumb.jpg")
+        thumb_path = _save_thumbnail(cover_url, target_thumb)
+
+    return AudioMetadata(
+        path=music_path,
+        title=title,
+        performer=performer,
+        duration=duration,
+        thumbnail_path=thumb_path,
+    )
+
+
+async def download_audio(url: str, output_dir: str) -> AudioMetadata:
+    """Download audio only with rich metadata. Returns AudioMetadata."""
     loop = asyncio.get_event_loop()
+    resolved_url = await loop.run_in_executor(None, _resolve_redirect, url)
+    if is_photo_url(resolved_url):
+        return await loop.run_in_executor(None, _sync_download_audio_tikwm, url, output_dir)
     try:
         return await loop.run_in_executor(None, _sync_download_audio, url, output_dir)
     except Exception as exc:

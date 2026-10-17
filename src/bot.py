@@ -20,7 +20,7 @@ from telegram.ext import (
 from config.settings import settings
 from helper.file_utils import cleanup_files, get_user_download_dir
 from helper.user_store import get_lang
-from src.downloader import download_audio, download_video
+from src.downloader import download_audio, download_video, AudioMetadata
 from src.queue_manager import DownloadJob, DownloadQueue
 from ui.templates import Msg
 
@@ -40,6 +40,32 @@ async def process_job(job: DownloadJob) -> None:
     # Re-use the already-running application's bot instead of building a new one
     # This is injected properly via the callback closure in create_app().
     raise NotImplementedError("Use the closure version from create_app()")
+
+
+async def _send_audio_meta(bot, chat_id: int, meta: AudioMetadata) -> None:
+    """Send audio file using Telegram native player bubble with cover art and tags."""
+    thumb_handle = None
+    if meta.thumbnail_path and os.path.exists(meta.thumbnail_path):
+        try:
+            thumb_handle = open(meta.thumbnail_path, "rb")
+        except Exception as e:
+            logger.warning("Could not open thumbnail %s: %s", meta.thumbnail_path, e)
+    try:
+        with open(meta.path, "rb") as f:
+            kwargs = {
+                "chat_id": chat_id,
+                "audio": f,
+                "title": meta.title or "TikTok Audio",
+                "performer": meta.performer or "TikTok",
+            }
+            if meta.duration and meta.duration > 0:
+                kwargs["duration"] = int(meta.duration)
+            if thumb_handle:
+                kwargs["thumbnail"] = thumb_handle
+            await bot.send_audio(**kwargs)
+    finally:
+        if thumb_handle:
+            thumb_handle.close()
 
 
 def _make_process_job(bot_app: Application):
@@ -63,8 +89,10 @@ def _make_process_job(bot_app: Application):
             text=(
                 msg.downloading_audio(job.label)
                 if job.quality == "audio"
+                else msg.downloading_photo_both(job.label)
+                if job.quality == "photo_both"
                 else msg.downloading_photo(job.label)
-                if job.label == "Photo"
+                if job.quality == "photo" or job.label == "Photo"
                 else msg.downloading(job.label, job.quality)
             ),
         )
@@ -80,16 +108,26 @@ def _make_process_job(bot_app: Application):
             stop_action = asyncio.Event()
             action = (
                 ChatAction.RECORD_VOICE if job.quality == "audio"
-                else ChatAction.UPLOAD_PHOTO if job.label == "Photo"
+                else ChatAction.UPLOAD_PHOTO if job.quality in ("photo", "photo_both") or job.label == "Photo"
                 else ChatAction.UPLOAD_VIDEO
             )
             action_task = asyncio.create_task(
                 _keep_uploading(bot, job.chat_id, action, stop_action)
             )
 
+            audio_meta: AudioMetadata | None = None
+            files: list[str] = []
+            content_type: str = ""
+
             try:
                 if job.quality == "audio":
-                    audio_path = await download_audio(job.url, output_dir)
+                    audio_meta = await download_audio(job.url, output_dir)
+                elif job.quality == "photo_both":
+                    files, content_type = await download_video(job.url, "1080p", output_dir)
+                    try:
+                        audio_meta = await download_audio(job.url, output_dir)
+                    except Exception as exc:
+                        logger.warning("Could not extract audio for photo_both job: %s", exc)
                 else:
                     files, content_type = await download_video(job.url, job.quality, output_dir)
             finally:
@@ -103,14 +141,42 @@ def _make_process_job(bot_app: Application):
                         text=msg.saved_file(job.label, output_dir),
                         parse_mode="Markdown",
                     )
+                elif audio_meta:
+                    await _send_audio_meta(bot, job.chat_id, audio_meta)
+                    to_clean = [audio_meta.path]
+                    if audio_meta.thumbnail_path:
+                        to_clean.append(audio_meta.thumbnail_path)
+                    cleanup_files(to_clean)
+            elif job.quality == "photo_both":
+                if job.save_locally:
+                    await bot.send_message(
+                        chat_id=job.chat_id,
+                        text=msg.saved_file(job.label, output_dir),
+                        parse_mode="Markdown",
+                    )
                 else:
-                    with open(audio_path, "rb") as f:
-                        await bot.send_audio(
-                            chat_id=job.chat_id,
-                            audio=f,
-                            caption=msg.audio_caption(job.label),
-                        )
-                    cleanup_files([audio_path])
+                    if files and content_type == "photo":
+                        from telegram import InputMediaPhoto
+                        handles = [open(p, "rb") for p in files]
+                        try:
+                            if len(handles) == 1:
+                                await bot.send_photo(
+                                    chat_id=job.chat_id,
+                                    photo=handles[0],
+                                )
+                            else:
+                                media = [InputMediaPhoto(media=fh) for fh in handles]
+                                await bot.send_media_group(chat_id=job.chat_id, media=media)
+                        finally:
+                            for fh in handles:
+                                fh.close()
+                        cleanup_files(files)
+                    if audio_meta:
+                        await _send_audio_meta(bot, job.chat_id, audio_meta)
+                        to_clean = [audio_meta.path]
+                        if audio_meta.thumbnail_path:
+                            to_clean.append(audio_meta.thumbnail_path)
+                        cleanup_files(to_clean)
             else:
                 if job.save_locally:
                     await bot.send_message(
@@ -195,7 +261,7 @@ def _make_process_job(bot_app: Application):
 def create_app() -> Application:
     from src.handlers.commands import cmd_start, cmd_status, cmd_stats, cmd_help
     from src.handlers.messages import handle_text, handle_document
-    from src.handlers.callbacks import handle_quality_callback, handle_folder_callback
+    from src.handlers.callbacks import handle_quality_callback, handle_photo_callback, handle_folder_callback
     from src.handlers.language import cmd_language, handle_language_callback
 
     app = Application.builder().token(settings.bot_token).write_timeout(120).read_timeout(60).build()
@@ -216,6 +282,7 @@ def create_app() -> Application:
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.Document.MimeType("text/plain"), handle_document))
     app.add_handler(CallbackQueryHandler(handle_quality_callback, pattern=r"^quality_"))
+    app.add_handler(CallbackQueryHandler(handle_photo_callback, pattern=r"^photo_"))
     app.add_handler(CallbackQueryHandler(handle_folder_callback, pattern=r"^folder_"))
     app.add_handler(CallbackQueryHandler(handle_language_callback, pattern=r"^lang_"))
 

@@ -4,3 +4,4 @@ gallery-dl
 python-dotenv
 motor
 certifi
+Pillow

@@ -16,6 +16,19 @@ def quality_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def photo_keyboard() -> InlineKeyboardMarkup:
+    """Return format-selection keyboard for TikTok photo slideshows."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🖼 Photos only", callback_data="photo_photos"),
+            InlineKeyboardButton("🎵 Audio only", callback_data="photo_audio"),
+        ],
+        [
+            InlineKeyboardButton("📦 Photos + Audio", callback_data="photo_both"),
+        ],
+    ])
+
+
 def language_keyboard() -> InlineKeyboardMarkup:
     """Return the language-selection inline keyboard."""
     return InlineKeyboardMarkup([[
