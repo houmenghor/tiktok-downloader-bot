@@ -85,27 +85,47 @@ def _sync_download(url: str, quality: str, output_dir: str) -> tuple[str, dict]:
 
 def _save_thumbnail(cover_url: str, output_path: str) -> str | None:
     """Download cover image, resize/convert to 320x320 JPEG for Telegram audio player."""
-    import urllib.request
+    if cover_url.startswith("/"):
+        cover_url = f"https://www.tikwm.com{cover_url}"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Referer": "https://www.tiktok.com/",
+    }
+
+    data = None
     try:
-        req = urllib.request.Request(cover_url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = resp.read()
-        try:
-            from PIL import Image
-            import io
-            img = Image.open(io.BytesIO(data))
-            if img.mode != "RGB":
-                img = img.convert("RGB")
-            img.thumbnail((320, 320))
-            img.save(output_path, "JPEG", quality=85)
-            return output_path
-        except Exception:
-            with open(output_path, "wb") as f:
-                f.write(data)
-            return output_path
+        import httpx
+        with httpx.Client(headers=headers, timeout=15.0, follow_redirects=True) as client:
+            resp = client.get(cover_url)
+            if resp.status_code == 200:
+                data = resp.content
     except Exception as e:
-        logger.warning("Failed to save audio thumbnail from %s: %s", cover_url, e)
-        return None
+        logger.debug("httpx thumbnail download failed: %s", e)
+
+    if data is None:
+        import urllib.request
+        try:
+            req = urllib.request.Request(cover_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = resp.read()
+        except Exception as e:
+            logger.warning("Failed to save audio thumbnail from %s: %s", cover_url, e)
+            return None
+
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(data))
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img.thumbnail((320, 320))
+        img.save(output_path, "JPEG", quality=85)
+        return output_path
+    except Exception:
+        with open(output_path, "wb") as f:
+            f.write(data)
+        return output_path
 
 
 def _sync_download_audio(url: str, output_dir: str) -> AudioMetadata:
@@ -173,37 +193,117 @@ def _sync_download_photos_gdl(url: str, output_dir: str) -> list[str]:
     return sorted(photos)
 
 
+def _fetch_tikwm_data(url: str) -> dict:
+    """Robust TikWM API fetcher with browser headers, POST+GET fallback, and httpx/urllib fallback."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.tikwm.com/",
+    }
+
+    # 1. Try httpx (HTTP/2 + modern TLS ciphers)
+    try:
+        import httpx
+        with httpx.Client(headers=headers, timeout=20.0, follow_redirects=True) as client:
+            # Try POST
+            try:
+                resp = client.post("https://www.tikwm.com/api/", data={"url": url, "count": 12, "cursor": 0, "web": 1, "hd": 1})
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("code") == 0 and "data" in data:
+                        return data["data"]
+            except Exception as e:
+                logger.debug("TikWM POST via httpx failed: %s", e)
+
+            # Try GET
+            try:
+                resp = client.get("https://www.tikwm.com/api/", params={"url": url})
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("code") == 0 and "data" in data:
+                        return data["data"]
+            except Exception as e:
+                logger.debug("TikWM GET via httpx failed: %s", e)
+    except ImportError:
+        pass
+
+    # 2. Fallback to urllib with browser headers
+    import urllib.request
+    import urllib.parse
+    import json
+
+    # Try POST
+    try:
+        post_data = urllib.parse.urlencode({"url": url, "count": 12, "cursor": 0, "web": 1, "hd": 1}).encode()
+        req = urllib.request.Request("https://www.tikwm.com/api/", data=post_data, headers=headers)
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode())
+            if data.get("code") == 0 and "data" in data:
+                return data["data"]
+    except Exception as e:
+        logger.debug("TikWM POST via urllib failed: %s", e)
+
+    # Try GET
+    try:
+        encoded_url = urllib.parse.quote(url, safe="")
+        req = urllib.request.Request(f"https://www.tikwm.com/api/?url={encoded_url}", headers=headers)
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode())
+            if data.get("code") == 0 and "data" in data:
+                return data["data"]
+    except Exception as e:
+        logger.debug("TikWM GET via urllib failed: %s", e)
+
+    raise RuntimeError("TikWM API failed")
+
+
+def _download_file(file_url: str, output_path: str, timeout: int = 30) -> None:
+    """Download a remote file using httpx or urllib, handling relative URLs and redirects."""
+    if file_url.startswith("/"):
+        file_url = f"https://www.tikwm.com{file_url}"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Referer": "https://www.tiktok.com/",
+    }
+
+    try:
+        import httpx
+        with httpx.Client(headers=headers, timeout=float(timeout), follow_redirects=True) as client:
+            resp = client.get(file_url)
+            if resp.status_code == 200 and len(resp.content) > 0:
+                with open(output_path, "wb") as f:
+                    f.write(resp.content)
+                return
+    except Exception as e:
+        logger.debug("httpx download failed for %s: %s", file_url, e)
+
+    import urllib.request
+    req = urllib.request.Request(file_url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as resp, open(output_path, "wb") as f:
+        f.write(resp.read())
+
+
 def _sync_download_audio_tikwm(url: str, output_dir: str) -> AudioMetadata:
     """Fallback audio downloader using TikWM API. Returns AudioMetadata."""
-    import urllib.request
-    import json
     import time
     import os
 
     os.makedirs(output_dir, exist_ok=True)
-    api_url = f"https://www.tikwm.com/api/?url={url}"
-    req = urllib.request.Request(api_url, headers={"User-Agent": "Mozilla/5.0"})
+    post_data = _fetch_tikwm_data(url)
 
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode())
-    except Exception as e:
-        logger.error("TikWM API failed for audio: %s", e)
-        raise RuntimeError("TikWM API failed")
-
-    if data.get("code") != 0 or "data" not in data or not data["data"].get("music"):
-        logger.error("TikWM API returned error or no music: %s", data)
-        raise RuntimeError("The post is unavailable. It may have been deleted, set to private, or region-locked by the creator.")
-
-    post_data = data["data"]
-    music_url = post_data["music"]
     music_info = post_data.get("music_info") or {}
+    # Prefer direct TikTok CDN play link over relative proxy link
+    music_url = music_info.get("play") or post_data.get("music")
+    if not music_url:
+        raise RuntimeError("No audio track found in this post.")
+
     video_id = post_data.get("id", str(int(time.time())))
-    music_req = urllib.request.Request(music_url, headers={"User-Agent": "Mozilla/5.0"})
     music_path = os.path.join(output_dir, f"{video_id}.mp3")
+
     try:
-        with urllib.request.urlopen(music_req, timeout=30) as m_resp, open(music_path, "wb") as f:
-            f.write(m_resp.read())
+        _download_file(music_url, music_path, timeout=30)
     except Exception as e:
         logger.error("Failed to download music %s: %s", music_url, e)
         raise RuntimeError("The post is unavailable. It may have been deleted, set to private, or region-locked by the creator.")
@@ -213,7 +313,12 @@ def _sync_download_audio_tikwm(url: str, output_dir: str) -> AudioMetadata:
     duration = int(music_info.get("duration") or post_data.get("duration") or 0)
 
     thumb_path = None
-    cover_url = music_info.get("cover") or post_data.get("cover")
+    cover_url = (
+        music_info.get("cover")
+        or (post_data.get("images")[0] if post_data.get("images") else None)
+        or (post_data.get("author") or {}).get("avatar")
+        or post_data.get("cover")
+    )
     if cover_url:
         target_thumb = os.path.join(output_dir, f"{video_id}_thumb.jpg")
         thumb_path = _save_thumbnail(cover_url, target_thumb)
@@ -232,7 +337,11 @@ async def download_audio(url: str, output_dir: str) -> AudioMetadata:
     loop = asyncio.get_event_loop()
     resolved_url = await loop.run_in_executor(None, _resolve_redirect, url)
     if is_photo_url(resolved_url):
-        return await loop.run_in_executor(None, _sync_download_audio_tikwm, url, output_dir)
+        try:
+            return await loop.run_in_executor(None, _sync_download_audio_tikwm, resolved_url, output_dir)
+        except Exception as exc:
+            logger.info("TikWM failed for photo post audio (%s) — trying yt-dlp fallback", exc)
+            return await loop.run_in_executor(None, _sync_download_audio, resolved_url, output_dir)
     try:
         return await loop.run_in_executor(None, _sync_download_audio, url, output_dir)
     except Exception as exc:
@@ -262,38 +371,26 @@ def _sync_probe(url: str) -> str:
 
 def _sync_download_tikwm(url: str, output_dir: str) -> tuple[list[str], str]:
     """Fallback downloader using TikWM API."""
-    import urllib.request
-    import json
     import time
-
     os.makedirs(output_dir, exist_ok=True)
-    api_url = f"https://www.tikwm.com/api/?url={url}"
-    req = urllib.request.Request(api_url, headers={"User-Agent": "Mozilla/5.0"})
 
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode())
+        post_data = _fetch_tikwm_data(url)
     except Exception as e:
         logger.error("TikWM API failed: %s", e)
         return [], ""
 
-    if data.get("code") != 0 or "data" not in data:
-        logger.error("TikWM API returned error: %s", data)
-        return [], ""
-
-    post_data = data["data"]
     video_id = post_data.get("id", str(int(time.time())))
 
     if post_data.get("images"):
         photos = []
         for i, img_url in enumerate(post_data["images"]):
-            img_req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0"})
             ext = img_url.split("?")[0].split(".")[-1]
-            if len(ext) > 4: ext = "jpg"
+            if len(ext) > 4:
+                ext = "jpg"
             img_path = os.path.join(output_dir, f"{video_id}_{i}.{ext}")
             try:
-                with urllib.request.urlopen(img_req, timeout=15) as img_resp, open(img_path, "wb") as f:
-                    f.write(img_resp.read())
+                _download_file(img_url, img_path, timeout=20)
                 photos.append(img_path)
             except Exception as e:
                 logger.error("Failed to download image %s: %s", img_url, e)
@@ -302,11 +399,9 @@ def _sync_download_tikwm(url: str, output_dir: str) -> tuple[list[str], str]:
 
     elif post_data.get("play"):
         video_url = post_data.get("hdplay") or post_data.get("play")
-        vid_req = urllib.request.Request(video_url, headers={"User-Agent": "Mozilla/5.0"})
         vid_path = os.path.join(output_dir, f"{video_id}.mp4")
         try:
-            with urllib.request.urlopen(vid_req, timeout=30) as vid_resp, open(vid_path, "wb") as f:
-                f.write(vid_resp.read())
+            _download_file(video_url, vid_path, timeout=45)
             return [vid_path], "video"
         except Exception as e:
             logger.error("Failed to download video %s: %s", video_url, e)
