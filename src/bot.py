@@ -6,6 +6,7 @@ download_queue and the bot instance — both of which live at this level.
 """
 import logging
 import asyncio
+import os
 
 from telegram import Message
 from telegram.constants import ChatAction
