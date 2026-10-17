@@ -407,6 +407,58 @@ def _sync_probe(url: str) -> str:
     return "video"
 
 
+def _sync_download_photos_ytdlp(url: str, output_dir: str) -> list[str]:
+    """Extract and download all full-resolution photo slideshow images using yt-dlp native web extractor."""
+    import re
+    os.makedirs(output_dir, exist_ok=True)
+    resolved_url = _resolve_redirect(url)
+    clean_url = resolved_url.split("?")[0]
+    video_url = re.sub(r"/photo/", "/video/", clean_url)
+
+    try:
+        ydl = yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True})
+        ie = ydl.get_info_extractor("TikTok")
+        match = ie._match_valid_url(video_url)
+        if not match:
+            return []
+        video_id = match.group("id")
+        user_id = match.group("user_id")
+        target_url = ie._create_url(user_id, video_id)
+
+        video_data, status = ie._extract_web_data_and_status(target_url, video_id)
+        if not video_data or status != 0:
+            return []
+
+        images = video_data.get("imagePost", {}).get("images", [])
+        downloaded = []
+        for idx, img in enumerate(images):
+            url_list = img.get("imageURL", {}).get("urlList", [])
+            if not url_list:
+                continue
+            img_url = url_list[0]
+            out_file = os.path.join(output_dir, f"{video_id}_{idx}.jpg")
+            try:
+                _download_file(img_url, out_file, timeout=20)
+                if os.path.exists(out_file) and os.path.getsize(out_file) > 0:
+                    downloaded.append(out_file)
+            except Exception as e:
+                logger.error("Failed to download slideshow photo %s: %s", img_url, e)
+
+        # Fallback to single cover image if images list was empty
+        if not downloaded:
+            cover_list = video_data.get("imagePost", {}).get("cover", {}).get("imageURL", {}).get("urlList", [])
+            if cover_list:
+                out_file = os.path.join(output_dir, f"{video_id}_0.jpg")
+                _download_file(cover_list[0], out_file, timeout=20)
+                if os.path.exists(out_file) and os.path.getsize(out_file) > 0:
+                    downloaded.append(out_file)
+
+        return downloaded
+    except Exception as exc:
+        logger.warning("yt-dlp native photo extraction failed: %s", exc)
+        return []
+
+
 def _sync_download_tikwm(url: str, output_dir: str) -> tuple[list[str], str]:
     """Fallback downloader using TikWM API."""
     import time
@@ -461,28 +513,42 @@ async def download_video(url: str, quality: str, output_dir: str) -> tuple[list[
     - photo: list of image paths to send as album
     """
     loop = asyncio.get_event_loop()
+    resolved_url = await loop.run_in_executor(None, _resolve_redirect, url)
 
-    # Short-circuit: skip yt-dlp entirely for known photo/slideshow URLs
-    if is_photo_url(url):
-        photos = await loop.run_in_executor(None, _sync_download_photos_gdl, url, output_dir)
+    # If photo requested or URL is a known photo/slideshow, try photo extractors first
+    if quality == "photo" or is_photo_url(resolved_url):
+        # 1. Native yt-dlp web extractor (bypasses bot protections, works on Render)
+        photos = await loop.run_in_executor(None, _sync_download_photos_ytdlp, resolved_url, output_dir)
+        if photos:
+            return photos, "photo"
+
+        # 2. TikWM fallback
+        tikwm_files, kind = await loop.run_in_executor(None, _sync_download_tikwm, resolved_url, output_dir)
+        if tikwm_files:
+            return tikwm_files, kind
+
+        # 3. gallery-dl fallback
+        photos = await loop.run_in_executor(None, _sync_download_photos_gdl, resolved_url, output_dir)
         if photos:
             return photos, "photo"
 
     try:
         filepath, info = await loop.run_in_executor(None, _sync_download, url, quality, output_dir)
-        # If yt-dlp only downloaded audio (due to anti-bot restrictions), force the fallback
+        # If yt-dlp only downloaded audio (due to photo slideshow or anti-bot restrictions), force the photo fallback
         if os.path.splitext(filepath)[1].lower() in {".mp3", ".m4a", ".wav", ".aac", ".weba"}:
-            raise RuntimeError("yt-dlp returned an audio file instead of a video (bot protection)")
+            raise RuntimeError("yt-dlp returned an audio file instead of a video (photo post or bot protection)")
     except Exception as exc:
         err_str = str(exc)
-        logger.info("yt-dlp failed (%s) — falling back to gallery-dl", exc)
-        photos = await loop.run_in_executor(None, _sync_download_photos_gdl, url, output_dir)
+        logger.info("yt-dlp video failed (%s) — checking for photo slideshow", exc)
+        photos = await loop.run_in_executor(None, _sync_download_photos_ytdlp, resolved_url, output_dir)
         if photos:
             return photos, "photo"
-        logger.info("gallery-dl also failed, falling back to TikWM API")
-        tikwm_files, kind = await loop.run_in_executor(None, _sync_download_tikwm, url, output_dir)
+        tikwm_files, kind = await loop.run_in_executor(None, _sync_download_tikwm, resolved_url, output_dir)
         if tikwm_files:
             return tikwm_files, kind
+        photos = await loop.run_in_executor(None, _sync_download_photos_gdl, resolved_url, output_dir)
+        if photos:
+            return photos, "photo"
         raise RuntimeError("The post is unavailable. It may have been deleted, set to private, or region-locked by the creator.")
 
     # Detect photo slideshow — yt-dlp downloads images instead of a video
