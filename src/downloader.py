@@ -28,6 +28,19 @@ class AudioMetadata:
     thumbnail_path: str | None = None
 
 
+def _get_ffmpeg_location() -> str | None:
+    import sys
+    path = settings.ffmpeg_path or "ffmpeg"
+    if sys.platform != "win32" and path.lower().endswith(".exe"):
+        path = shutil.which("ffmpeg") or "ffmpeg"
+    resolved = shutil.which(path) or path
+    if os.path.isfile(resolved):
+        return os.path.dirname(resolved)
+    if os.path.isdir(resolved):
+        return resolved
+    return None
+
+
 def _base_opts(output_dir: str) -> dict:
     """Common yt-dlp options shared by all download modes."""
     opts: dict = {
@@ -36,7 +49,7 @@ def _base_opts(output_dir: str) -> dict:
         "no_warnings": True,
         "retries": 3,
         "socket_timeout": 30,
-        "ffmpeg_location": os.path.dirname(settings.ffmpeg_path) or None,
+        "ffmpeg_location": _get_ffmpeg_location(),
     }
     if settings.cookies_file and os.path.isfile(settings.cookies_file):
         opts["cookiefile"] = settings.cookies_file
@@ -64,11 +77,13 @@ def _build_ydl_opts(quality: str, output_dir: str) -> dict:
 def _build_audio_opts(output_dir: str) -> dict:
     opts = _base_opts(output_dir)
     opts["format"] = "bestaudio/best"
-    opts["postprocessors"] = [{
-        "key": "FFmpegExtractAudio",
-        "preferredcodec": "mp3",
-        "preferredquality": "192",
-    }]
+    ff_loc = _get_ffmpeg_location()
+    if ff_loc:
+        opts["postprocessors"] = [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192",
+        }]
     opts["outtmpl"] = os.path.join(output_dir, "%(id)s.%(ext)s")
     return opts
 
@@ -138,11 +153,17 @@ def _sync_download_audio(url: str, output_dir: str) -> AudioMetadata:
         base = os.path.join(output_dir, info["id"])
         mp3_path = base + ".mp3"
         if not os.path.exists(mp3_path):
-            matches = glob.glob(base + "*.mp3")
-            if matches:
+            matches = glob.glob(base + "*")
+            audio_matches = [
+                m for m in matches
+                if os.path.splitext(m)[1].lower() in {".mp3", ".m4a", ".aac", ".wav", ".ogg", ".opus"}
+            ]
+            if audio_matches:
+                mp3_path = audio_matches[0]
+            elif matches:
                 mp3_path = matches[0]
             else:
-                raise FileNotFoundError(f"Audio file not found after download: {base}.mp3")
+                raise FileNotFoundError(f"Audio file not found after download: {base}")
 
         title = info.get("track") or info.get("title") or "TikTok Audio"
         performer = info.get("artist") or info.get("creator") or info.get("uploader") or "TikTok"
@@ -202,29 +223,37 @@ def _fetch_tikwm_data(url: str) -> dict:
         "Referer": "https://www.tikwm.com/",
     }
 
+    url_candidates = [url]
+    if "?" in url:
+        url_candidates.append(url.split("?")[0])
+
+    api_hosts = ["https://www.tikwm.com/api/", "https://tikwm.com/api/"]
+
     # 1. Try httpx (HTTP/2 + modern TLS ciphers)
     try:
         import httpx
         with httpx.Client(headers=headers, timeout=20.0, follow_redirects=True) as client:
-            # Try POST
-            try:
-                resp = client.post("https://www.tikwm.com/api/", data={"url": url, "count": 12, "cursor": 0, "web": 1, "hd": 1})
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data.get("code") == 0 and "data" in data:
-                        return data["data"]
-            except Exception as e:
-                logger.debug("TikWM POST via httpx failed: %s", e)
+            for host in api_hosts:
+                for target_url in url_candidates:
+                    # Try POST
+                    try:
+                        resp = client.post(host, data={"url": target_url, "count": 12, "cursor": 0, "web": 1, "hd": 1})
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            if data.get("code") == 0 and "data" in data:
+                                return data["data"]
+                    except Exception as e:
+                        logger.debug("TikWM POST via httpx failed (%s): %s", host, e)
 
-            # Try GET
-            try:
-                resp = client.get("https://www.tikwm.com/api/", params={"url": url})
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data.get("code") == 0 and "data" in data:
-                        return data["data"]
-            except Exception as e:
-                logger.debug("TikWM GET via httpx failed: %s", e)
+                    # Try GET
+                    try:
+                        resp = client.get(host, params={"url": target_url})
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            if data.get("code") == 0 and "data" in data:
+                                return data["data"]
+                    except Exception as e:
+                        logger.debug("TikWM GET via httpx failed (%s): %s", host, e)
     except ImportError:
         pass
 
@@ -233,27 +262,29 @@ def _fetch_tikwm_data(url: str) -> dict:
     import urllib.parse
     import json
 
-    # Try POST
-    try:
-        post_data = urllib.parse.urlencode({"url": url, "count": 12, "cursor": 0, "web": 1, "hd": 1}).encode()
-        req = urllib.request.Request("https://www.tikwm.com/api/", data=post_data, headers=headers)
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            data = json.loads(resp.read().decode())
-            if data.get("code") == 0 and "data" in data:
-                return data["data"]
-    except Exception as e:
-        logger.debug("TikWM POST via urllib failed: %s", e)
+    for host in api_hosts:
+        for target_url in url_candidates:
+            # Try POST
+            try:
+                post_data = urllib.parse.urlencode({"url": target_url, "count": 12, "cursor": 0, "web": 1, "hd": 1}).encode()
+                req = urllib.request.Request(host, data=post_data, headers=headers)
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    data = json.loads(resp.read().decode())
+                    if data.get("code") == 0 and "data" in data:
+                        return data["data"]
+            except Exception as e:
+                logger.debug("TikWM POST via urllib failed (%s): %s", host, e)
 
-    # Try GET
-    try:
-        encoded_url = urllib.parse.quote(url, safe="")
-        req = urllib.request.Request(f"https://www.tikwm.com/api/?url={encoded_url}", headers=headers)
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            data = json.loads(resp.read().decode())
-            if data.get("code") == 0 and "data" in data:
-                return data["data"]
-    except Exception as e:
-        logger.debug("TikWM GET via urllib failed: %s", e)
+            # Try GET
+            try:
+                encoded_url = urllib.parse.quote(target_url, safe="")
+                req = urllib.request.Request(f"{host}?url={encoded_url}", headers=headers)
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    data = json.loads(resp.read().decode())
+                    if data.get("code") == 0 and "data" in data:
+                        return data["data"]
+            except Exception as e:
+                logger.debug("TikWM GET via urllib failed (%s): %s", host, e)
 
     raise RuntimeError("TikWM API failed")
 
@@ -334,19 +365,26 @@ def _sync_download_audio_tikwm(url: str, output_dir: str) -> AudioMetadata:
 
 async def download_audio(url: str, output_dir: str) -> AudioMetadata:
     """Download audio only with rich metadata. Returns AudioMetadata."""
+    import re
     loop = asyncio.get_event_loop()
     resolved_url = await loop.run_in_executor(None, _resolve_redirect, url)
+
+    # For photo slideshow URLs, TikTok serves the underlying audio track under /video/<id>
+    # e.g. https://www.tiktok.com/@user/photo/123 -> https://www.tiktok.com/@user/video/123
+    clean_resolved = resolved_url.split("?")[0]
+    ytdlp_audio_url = re.sub(r"/photo/", "/video/", clean_resolved) if is_photo_url(resolved_url) else url
+
     if is_photo_url(resolved_url):
         try:
             return await loop.run_in_executor(None, _sync_download_audio_tikwm, resolved_url, output_dir)
         except Exception as exc:
-            logger.info("TikWM failed for photo post audio (%s) — trying yt-dlp fallback", exc)
-            return await loop.run_in_executor(None, _sync_download_audio, resolved_url, output_dir)
+            logger.info("TikWM failed for photo post audio (%s) — trying yt-dlp fallback with %s", exc, ytdlp_audio_url)
+            return await loop.run_in_executor(None, _sync_download_audio, ytdlp_audio_url, output_dir)
     try:
-        return await loop.run_in_executor(None, _sync_download_audio, url, output_dir)
+        return await loop.run_in_executor(None, _sync_download_audio, ytdlp_audio_url, output_dir)
     except Exception as exc:
         logger.info("yt-dlp failed to download audio (%s) — falling back to TikWM", exc)
-        return await loop.run_in_executor(None, _sync_download_audio_tikwm, url, output_dir)
+        return await loop.run_in_executor(None, _sync_download_audio_tikwm, resolved_url, output_dir)
 
 
 def _resolve_redirect(url: str, timeout: int = 10) -> str:
