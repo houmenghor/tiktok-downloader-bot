@@ -38,15 +38,12 @@ def language_keyboard() -> InlineKeyboardMarkup:
 
 
 def folder_keyboard() -> InlineKeyboardMarkup:
-    """Preset save-folder options for batch downloads — shows real resolved paths."""
+    """Save options for batch .txt file downloads."""
     home = Path.home()
-    folders = [
-        ("📱 " + str(home / "Downloads" / "Telegram Desktop"), str(home / "Downloads" / "Telegram Desktop")),
-        ("💾 " + str(home / "Downloads"),                      str(home / "Downloads")),
-        ("🖥 " + str(home / "Desktop"),                        str(home / "Desktop")),
-    ]
     buttons = [
-        [InlineKeyboardButton(label, callback_data=f"folder_{path}")]
-        for label, path in folders
+        [InlineKeyboardButton("💬 Send all to Telegram Chat", callback_data="folder_chat")],
+        [InlineKeyboardButton(f"📁 {home / 'Downloads' / 'Telegram Desktop'}", callback_data=f"folder_{home / 'Downloads' / 'Telegram Desktop'}")],
+        [InlineKeyboardButton(f"💾 {home / 'Downloads'}", callback_data=f"folder_{home / 'Downloads'}")],
+        [InlineKeyboardButton(f"🖥 {home / 'Desktop'}", callback_data=f"folder_{home / 'Desktop'}")],
     ]
     return InlineKeyboardMarkup(buttons)

@@ -23,19 +23,19 @@ from ui.templates import Msg
 
 logger = logging.getLogger(__name__)
 
-# pending[(user_id, kind)] = (links: list[str], timestamp: float)
-_pending: dict[tuple[int, str], tuple[list[str], float]] = {}
+# pending[(user_id, kind)] = (links: list[str], source: str, timestamp: float)
+_pending: dict[tuple[int, str], tuple[list[str], str, float]] = {}
 
 # pending_save[user_id] = (links, quality, timestamp) — waiting for folder pick
 _pending_save: dict[int, tuple[list[str], str, float]] = {}
 
 
-def _store_pending(user_id: int, links: list[str], kind: str = "video") -> None:
-    _pending[(user_id, kind)] = (links, time.monotonic())
+def _store_pending(user_id: int, links: list[str], kind: str = "video", source: str = "message") -> None:
+    _pending[(user_id, kind)] = (links, source, time.monotonic())
 
 
-def pop_pending(user_id: int, kind: str | None = None) -> list[str] | None:
-    """Pop pending links for a user. If kind is given, checks that kind first."""
+def pop_pending(user_id: int, kind: str | None = None) -> tuple[list[str], str] | None:
+    """Pop pending (links, source) for a user. If kind is given, checks that kind first."""
     if kind:
         entry = _pending.pop((user_id, kind), None)
     else:
@@ -43,11 +43,11 @@ def pop_pending(user_id: int, kind: str | None = None) -> list[str] | None:
 
     if entry is None:
         return None
-    links, timestamp = entry
+    links, source, timestamp = entry
     if time.monotonic() - timestamp > settings.session_ttl:
         logger.info("Session for user %d expired", user_id)
         return None
-    return links
+    return links, source
 
 
 def store_pending_save(user_id: int, links: list[str], quality: str) -> None:
@@ -101,7 +101,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     # Prompt format choice for photo posts (Photos only, Audio only, Photos + Audio)
     if photo_links:
-        _store_pending(user_id, photo_links, kind="photo")
+        _store_pending(user_id, photo_links, kind="photo", source="message")
         await update.message.reply_text(
             msg.photo_links_found(len(photo_links), source="message"),
             parse_mode="Markdown",
@@ -110,7 +110,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     # Ask quality for video links
     if video_links:
-        _store_pending(user_id, video_links, kind="video")
+        _store_pending(user_id, video_links, kind="video", source="message")
         await update.message.reply_text(
             msg.links_found(len(video_links), source="message"),
             parse_mode="Markdown",
@@ -157,7 +157,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     # If every link is a photo/slideshow, prompt format selection
     if all(is_photo_url(l) for l in links):
-        _store_pending(user_id, links, kind="photo")
+        _store_pending(user_id, links, kind="photo", source="file")
         await update.message.reply_text(
             msg.photo_links_found(len(links), source="file"),
             parse_mode="Markdown",
@@ -165,7 +165,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
-    _store_pending(user_id, links, kind="video")
+    _store_pending(user_id, links, kind="video", source="file")
     await update.message.reply_text(
         msg.links_found(len(links), source="file"),
         parse_mode="Markdown",
