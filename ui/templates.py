@@ -167,20 +167,29 @@ class Msg:
         )
 
     def queued_photo(self, count: int, format_type: str = "photo") -> str:
-        noun = "slideshow" if count == 1 else "slideshows"
         if format_type == "audio":
             return self._p(
                 "🎵 Got it! Downloading audio — I'll send it when ready.",
                 "🎵 បានទទួល! កំពុង download audio — ខ្ញុំនឹង send ពេលរួចរាល់។",
             )
         if format_type == "photo_both":
+            if count == 1:
+                return self._p(
+                    "📦 Got it! Downloading all photos + audio — I'll send them when ready.",
+                    "📦 បានទទួល! កំពុង download រូបភាពទាំងអស់ + audio — ខ្ញុំនឹង send ពេលរួចរាល់។",
+                )
             return self._p(
-                f"📦 Got it! Downloading {count} photo {noun} + audio — I'll send them when ready.",
-                f"📦 បានទទួល! កំពុង download {count} រូបភាព + audio — ខ្ញុំនឹង send ពេលរួចរាល់។",
+                f"📦 Got it! Downloading all photos + audio from {count} slideshows — I'll send them when ready.",
+                f"📦 បានទទួល! កំពុង download រូបភាពទាំងអស់ + audio ពី {count} slideshow — ខ្ញុំនឹង send ពេលរួចរាល់។",
+            )
+        if count == 1:
+            return self._p(
+                "🖼 Got it! Downloading all photos from this slideshow — I'll send them when ready.",
+                "🖼 បានទទួល! កំពុង download រូបភាពទាំងអស់ពី slideshow នេះ — ខ្ញុំនឹង send ពេលរួចរាល់។",
             )
         return self._p(
-            f"🖼 Got it! Downloading {count} photo {noun} — I'll send them when ready.",
-            f"🖼 បានទទួល! កំពុង download {count} រូបភាព — ខ្ញុំនឹង send ពេលរួចរាល់។",
+            f"🖼 Got it! Downloading all photos from {count} slideshows — I'll send them when ready.",
+            f"🖼 បានទទួល! កំពុង download រូបភាពទាំងអស់ពី {count} slideshow — ខ្ញុំនឹង send ពេលរួចរាល់។",
         )
 
     # Download progress

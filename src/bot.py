@@ -184,6 +184,11 @@ def _make_process_job(bot_app: Application):
                     )
                 else:
                     if files and content_type == "photo":
+                        if len(files) > 1:
+                            await bot.send_message(
+                                chat_id=job.chat_id,
+                                text=msg.sending_photos(job.label, len(files)),
+                            )
                         await _send_photos(bot, job.chat_id, files)
                         cleanup_files(files)
                     if audio_meta:
@@ -200,6 +205,11 @@ def _make_process_job(bot_app: Application):
                         parse_mode="Markdown",
                     )
                 elif content_type == "photo":
+                    if len(files) > 1:
+                        await bot.send_message(
+                            chat_id=job.chat_id,
+                            text=msg.sending_photos(job.label, len(files)),
+                        )
                     await _send_photos(bot, job.chat_id, files)
                     cleanup_files(files)
                 elif len(files) == 1:
