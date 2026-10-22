@@ -2,16 +2,26 @@ import asyncio
 import json
 import logging
 import os
+import shutil
+import sys
 
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 
+def _resolve_binary(path: str | None, default_name: str) -> str:
+    candidate = path or default_name
+    if sys.platform != "win32" and candidate.lower().endswith(".exe"):
+        candidate = shutil.which(default_name) or default_name
+    return shutil.which(candidate) or candidate
+
+
 async def get_duration(filepath: str) -> float:
     """Use ffprobe to get video duration in seconds."""
+    ffprobe_bin = _resolve_binary(settings.ffprobe_path, "ffprobe")
     cmd = [
-        settings.ffprobe_path, "-v", "quiet",
+        ffprobe_bin, "-v", "quiet",
         "-print_format", "json",
         "-show_format",
         filepath,
@@ -49,11 +59,12 @@ async def split_video(filepath: str, max_bytes: int) -> list[str]:
     base, _ = os.path.splitext(filepath)
     parts: list[str] = []
 
+    ffmpeg_bin = _resolve_binary(settings.ffmpeg_path, "ffmpeg")
     for i in range(num_parts):
         start = i * chunk_duration
         output = f"{base}_part{i + 1:02d}.mp4"
         cmd = [
-            settings.ffmpeg_path,
+            ffmpeg_bin,
             "-ss", str(start),
             "-i", filepath,
             "-t", str(chunk_duration),

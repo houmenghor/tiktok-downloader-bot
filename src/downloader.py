@@ -363,6 +363,163 @@ def _sync_download_audio_tikwm(url: str, output_dir: str) -> AudioMetadata:
     )
 
 
+def _get_audio_duration_sync(filepath: str) -> int:
+    """Use ffprobe to get audio duration in seconds."""
+    import json
+    import subprocess
+    import sys
+    path = settings.ffprobe_path or "ffprobe"
+    if sys.platform != "win32" and path.lower().endswith(".exe"):
+        path = shutil.which("ffprobe") or "ffprobe"
+    ffprobe_cmd = shutil.which(path) or "ffprobe"
+    try:
+        cmd = [ffprobe_cmd, "-v", "quiet", "-print_format", "json", "-show_format", filepath]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+        if res.returncode == 0:
+            data = json.loads(res.stdout)
+            return int(float(data.get("format", {}).get("duration", 0)))
+    except Exception:
+        pass
+    return 0
+
+
+def _fetch_ssstik_html(url: str) -> str:
+    """Fetch HTML from ssstik.io for photo/audio downloads."""
+    import urllib.parse
+    import urllib.request
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Referer": "https://ssstik.io/en",
+    }
+    data = urllib.parse.urlencode({"id": url, "locale": "en", "tt": "0"}).encode()
+    req = urllib.request.Request("https://ssstik.io/abc?url=dl", data=data, headers=headers)
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return r.read().decode("utf-8", errors="ignore")
+
+
+def _sync_download_photos_ssstik(url: str, output_dir: str) -> list[str]:
+    """Fallback photo downloader using ssstik.io (handles age-restricted / classified posts)."""
+    import base64
+    import re
+    import time
+
+    os.makedirs(output_dir, exist_ok=True)
+    try:
+        html = _fetch_ssstik_html(url)
+    except Exception as e:
+        logger.debug("ssstik HTML fetch failed: %s", e)
+        return []
+
+    # Extract base64 encoded slide URLs
+    # 1. From splide lazy-load attributes
+    b64_matches = re.findall(r'data-splide-lazy=["\']https://tikcdn\.io/ssstik/s/([^"\']+)["\']', html)
+    # 2. Also check direct download button links if splide empty
+    if not b64_matches:
+        b64_matches = re.findall(r'href=["\']https://tikcdn\.io/ssstik/(?:s/)?([A-Za-z0-9+/=]+)["\'][^>]*class=["\'][^"\']*slide', html)
+
+    slide_urls: list[str] = []
+    for b in b64_matches:
+        try:
+            padded = b + "=" * (-len(b) % 4)
+            decoded = base64.b64decode(padded).decode("utf-8")
+            if decoded.startswith("http") and decoded not in slide_urls:
+                slide_urls.append(decoded)
+        except Exception:
+            pass
+
+    if not slide_urls:
+        return []
+
+    video_id = str(int(time.time()))
+    id_match = re.search(r'/(?:photo|video)/(\d+)', url)
+    if id_match:
+        video_id = id_match.group(1)
+
+    downloaded = []
+    for idx, img_url in enumerate(slide_urls):
+        ext = "webp" if ".webp" in img_url.lower() else "jpg"
+        out_file = os.path.join(output_dir, f"{video_id}_{idx}.{ext}")
+        try:
+            _download_file(img_url, out_file, timeout=20)
+            if os.path.exists(out_file) and os.path.getsize(out_file) > 0:
+                downloaded.append(out_file)
+        except Exception as e:
+            logger.error("Failed to download ssstik slide photo %s: %s", img_url, e)
+
+    return downloaded
+
+
+def _sync_download_audio_ssstik(url: str, output_dir: str) -> AudioMetadata:
+    """Fallback audio downloader using ssstik.io. Returns AudioMetadata."""
+    import base64
+    import re
+    import time
+    from bs4 import BeautifulSoup
+
+    os.makedirs(output_dir, exist_ok=True)
+    html = _fetch_ssstik_html(url)
+
+    mp3_b64 = re.findall(r'href=["\']https://tikcdn\.io/ssstik/m/([^"\']+)["\']', html)
+    if not mp3_b64:
+        raise RuntimeError("No audio track found on ssstik.")
+
+    padded = mp3_b64[0] + "=" * (-len(mp3_b64[0]) % 4)
+    music_url = base64.b64decode(padded).decode("utf-8")
+
+    video_id = str(int(time.time()))
+    id_match = re.search(r'/(?:photo|video)/(\d+)', url)
+    if id_match:
+        video_id = id_match.group(1)
+
+    music_path = os.path.join(output_dir, f"{video_id}.mp3")
+    _download_file(music_url, music_path, timeout=30)
+    if not os.path.exists(music_path) or os.path.getsize(music_path) == 0:
+        raise RuntimeError("Downloaded audio file is empty from ssstik.")
+
+    soup = BeautifulSoup(html, "html.parser")
+    h2 = soup.find("h2")
+    author_name = h2.get_text(strip=True) if h2 else "TikTok"
+
+    # Try to find avatar or first photo for thumbnail
+    cover_url = None
+    avatar = soup.find("img", class_="result_author") or soup.select_one("#avatar_and_text img")
+    if avatar:
+        src = avatar.get("src") or avatar.get("data-splide-lazy")
+        if src and "tikcdn.io/ssstik/a/" in src:
+            try:
+                b_part = src.split("tikcdn.io/ssstik/a/")[-1]
+                padded_b = b_part + "=" * (-len(b_part) % 4)
+                cover_url = base64.b64decode(padded_b).decode("utf-8")
+            except Exception:
+                cover_url = src
+
+    # If no avatar, check if there was a slide image we can use as cover
+    if not cover_url:
+        b64_slides = re.findall(r'data-splide-lazy=["\']https://tikcdn\.io/ssstik/s/([^"\']+)["\']', html)
+        if b64_slides:
+            try:
+                padded_b = b64_slides[0] + "=" * (-len(b64_slides[0]) % 4)
+                cover_url = base64.b64decode(padded_b).decode("utf-8")
+            except Exception:
+                pass
+
+    thumb_path = None
+    if cover_url:
+        target_thumb = os.path.join(output_dir, f"{video_id}_thumb.jpg")
+        thumb_path = _save_thumbnail(cover_url, target_thumb)
+
+    duration = _get_audio_duration_sync(music_path)
+
+    return AudioMetadata(
+        path=music_path,
+        title="TikTok Audio",
+        performer=author_name,
+        duration=duration,
+        thumbnail_path=thumb_path,
+    )
+
+
 async def download_audio(url: str, output_dir: str) -> AudioMetadata:
     """Download audio only with rich metadata. Returns AudioMetadata."""
     import re
@@ -378,13 +535,21 @@ async def download_audio(url: str, output_dir: str) -> AudioMetadata:
         try:
             return await loop.run_in_executor(None, _sync_download_audio_tikwm, resolved_url, output_dir)
         except Exception as exc:
-            logger.info("TikWM failed for photo post audio (%s) — trying yt-dlp fallback with %s", exc, ytdlp_audio_url)
-            return await loop.run_in_executor(None, _sync_download_audio, ytdlp_audio_url, output_dir)
+            logger.info("TikWM failed for photo post audio (%s) — trying ssstik", exc)
+            try:
+                return await loop.run_in_executor(None, _sync_download_audio_ssstik, resolved_url, output_dir)
+            except Exception as exc_ssstik:
+                logger.info("ssstik failed for photo post audio (%s) — trying yt-dlp fallback with %s", exc_ssstik, ytdlp_audio_url)
+                return await loop.run_in_executor(None, _sync_download_audio, ytdlp_audio_url, output_dir)
     try:
         return await loop.run_in_executor(None, _sync_download_audio, ytdlp_audio_url, output_dir)
     except Exception as exc:
         logger.info("yt-dlp failed to download audio (%s) — falling back to TikWM", exc)
-        return await loop.run_in_executor(None, _sync_download_audio_tikwm, resolved_url, output_dir)
+        try:
+            return await loop.run_in_executor(None, _sync_download_audio_tikwm, resolved_url, output_dir)
+        except Exception as exc_tikwm:
+            logger.info("TikWM failed to download audio (%s) — falling back to ssstik", exc_tikwm)
+            return await loop.run_in_executor(None, _sync_download_audio_ssstik, resolved_url, output_dir)
 
 
 def _resolve_redirect(url: str, timeout: int = 10) -> str:
@@ -516,18 +681,23 @@ async def download_video(url: str, quality: str, output_dir: str) -> tuple[list[
     resolved_url = await loop.run_in_executor(None, _resolve_redirect, url)
 
     # If photo requested or URL is a known photo/slideshow, try photo extractors first
-    if quality == "photo" or is_photo_url(resolved_url):
+    if quality in ("photo", "photo_both") or is_photo_url(resolved_url):
         # 1. Native yt-dlp web extractor (bypasses bot protections, works on Render)
         photos = await loop.run_in_executor(None, _sync_download_photos_ytdlp, resolved_url, output_dir)
         if photos:
             return photos, "photo"
 
-        # 2. TikWM fallback
+        # 2. ssstik fallback (handles age-restricted / classified posts without login)
+        photos = await loop.run_in_executor(None, _sync_download_photos_ssstik, resolved_url, output_dir)
+        if photos:
+            return photos, "photo"
+
+        # 3. TikWM fallback
         tikwm_files, kind = await loop.run_in_executor(None, _sync_download_tikwm, resolved_url, output_dir)
         if tikwm_files:
             return tikwm_files, kind
 
-        # 3. gallery-dl fallback
+        # 4. gallery-dl fallback
         photos = await loop.run_in_executor(None, _sync_download_photos_gdl, resolved_url, output_dir)
         if photos:
             return photos, "photo"
@@ -541,6 +711,9 @@ async def download_video(url: str, quality: str, output_dir: str) -> tuple[list[
         err_str = str(exc)
         logger.info("yt-dlp video failed (%s) — checking for photo slideshow", exc)
         photos = await loop.run_in_executor(None, _sync_download_photos_ytdlp, resolved_url, output_dir)
+        if photos:
+            return photos, "photo"
+        photos = await loop.run_in_executor(None, _sync_download_photos_ssstik, resolved_url, output_dir)
         if photos:
             return photos, "photo"
         tikwm_files, kind = await loop.run_in_executor(None, _sync_download_tikwm, resolved_url, output_dir)

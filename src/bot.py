@@ -151,7 +151,7 @@ def _make_process_job(bot_app: Application):
                 if job.quality == "audio":
                     audio_meta = await download_audio(job.url, output_dir)
                 elif job.quality == "photo_both":
-                    files, content_type = await download_video(job.url, "1080p", output_dir)
+                    files, content_type = await download_video(job.url, "photo_both", output_dir)
                     try:
                         audio_meta = await download_audio(job.url, output_dir)
                     except Exception as exc:
