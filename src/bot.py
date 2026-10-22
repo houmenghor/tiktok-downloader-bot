@@ -69,6 +69,33 @@ async def _send_audio_meta(bot, chat_id: int, meta: AudioMetadata) -> None:
             thumb_handle.close()
 
 
+async def _send_photos(bot, chat_id: int, file_paths: list[str]) -> None:
+    """Send photos as Telegram photo or media albums chunked to at most 10 items."""
+    from telegram import InputMediaPhoto
+
+    if not file_paths:
+        return
+
+    # Telegram send_media_group allows between 2 and 10 items per album
+    chunk_size = 10
+    total = len(file_paths)
+    for i in range(0, total, chunk_size):
+        chunk = file_paths[i:i + chunk_size]
+        if len(chunk) == 1:
+            with open(chunk[0], "rb") as f:
+                await bot.send_photo(chat_id=chat_id, photo=f)
+        else:
+            handles = [open(p, "rb") for p in chunk]
+            try:
+                media = [InputMediaPhoto(media=fh) for fh in handles]
+                await bot.send_media_group(chat_id=chat_id, media=media)
+            finally:
+                for fh in handles:
+                    fh.close()
+        if i + chunk_size < total:
+            await asyncio.sleep(0.5)
+
+
 def _make_process_job(bot_app: Application):
     """Factory that closes over the Application so the bot reference is valid."""
 
@@ -157,20 +184,7 @@ def _make_process_job(bot_app: Application):
                     )
                 else:
                     if files and content_type == "photo":
-                        from telegram import InputMediaPhoto
-                        handles = [open(p, "rb") for p in files]
-                        try:
-                            if len(handles) == 1:
-                                await bot.send_photo(
-                                    chat_id=job.chat_id,
-                                    photo=handles[0],
-                                )
-                            else:
-                                media = [InputMediaPhoto(media=fh) for fh in handles]
-                                await bot.send_media_group(chat_id=job.chat_id, media=media)
-                        finally:
-                            for fh in handles:
-                                fh.close()
+                        await _send_photos(bot, job.chat_id, files)
                         cleanup_files(files)
                     if audio_meta:
                         await _send_audio_meta(bot, job.chat_id, audio_meta)
@@ -186,20 +200,7 @@ def _make_process_job(bot_app: Application):
                         parse_mode="Markdown",
                     )
                 elif content_type == "photo":
-                    from telegram import InputMediaPhoto
-                    handles = [open(p, "rb") for p in files]
-                    try:
-                        if len(handles) == 1:
-                            await bot.send_photo(
-                                chat_id=job.chat_id,
-                                photo=handles[0],
-                            )
-                        else:
-                            media = [InputMediaPhoto(media=fh) for fh in handles]
-                            await bot.send_media_group(chat_id=job.chat_id, media=media)
-                    finally:
-                        for fh in handles:
-                            fh.close()
+                    await _send_photos(bot, job.chat_id, files)
                     cleanup_files(files)
                 elif len(files) == 1:
                     with open(files[0], "rb") as f:
