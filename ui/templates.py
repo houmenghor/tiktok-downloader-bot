@@ -26,6 +26,7 @@ class Msg:
             "/start — show this message\n"
             "/status — show how many downloads are in progress\n"
             "/stats — show total users and downloads\n"
+            "/bypass — show active bypass strategies\n"
             "/language — change language\n\n"
          "👨‍💻 *Developer:* Hou Menghor\n"
          "📬 [t.me/houmenghor](https://t.me/houmenghor)",
@@ -37,6 +38,7 @@ class Msg:
             "/start — បង្ហាញសារនេះ\n"
             "/status — បង្ហាញចំនួន download កំពុងដំណើរការ\n"
             "/stats — បង្ហាញចំនួនអ្នកប្រើ និង download\n"
+            "/bypass — បង្ហាញយុទ្ធសាស្ត្រ bypass\n"
             "/language — ប្ដូរភាសា\n\n"
          "👨‍💻 *អ្នកបង្កើត:* ហ៊ួរ ម៉េងហ័រ\n"
          "📬 [t.me/houmenghor](https://t.me/houmenghor)",
@@ -59,6 +61,7 @@ class Msg:
             "/help — Show this help\n"
             "/status — See if your download will start now or wait\n"
             "/stats — Total users & downloads\n"
+            "/bypass — Show active bypass strategies\n"
             "/language — Change language\n\n"
             "👨\u200d💻 *Developer:* Hou Menghor\n"
             "📬 [t\\.me/houmenghor](https://t.me/houmenghor)",
@@ -77,10 +80,29 @@ class Msg:
             "/help — បង្ហាញជំនួយ\n"
             "/status — មើលថាដោនឡូតចាប់ផ្តើមភ្លាមៗ ឬត្រូវរង់ចាំ\n"
             "/stats — ចំនួនអ្នកប្រើ & download\n"
+            "/bypass — បង្ហាញយុទ្ធសាស្ត្រ bypass\n"
             "/language — ប្ដូរភាសា\n\n"
             "👨\u200d💻 *អ្នកបង្កើត:* ហ៊ួរ ម៉េងហ័រ\n"
             "📬 [t\\.me/houmenghor](https://t.me/houmenghor)",
         )
+
+    def bypass_info(self, strategies: list) -> str:
+        count = len(strategies)
+        lines_en = [f"🛡️ *Active Bypass Strategies ({count})*\n"]
+        lines_kh = [f"🛡️ *យុទ្ធសាស្ត្រ Bypass សកម្ម ({count})*\n"]
+        for idx, s in enumerate(strategies, start=1):
+            status = "🟢 Active" if s.is_active else "🔴 Offline"
+            lines_en.append(
+                f"*{idx}\\. {s.name}* \\[{status}\\]\n"
+                f"🎯 *Target:* `{s.target}`\n"
+                f"ℹ️ *Role:* {s.description}\n"
+            )
+            lines_kh.append(
+                f"*{idx}\\. {s.name}* \\[{status}\\]\n"
+                f"🎯 *Target:* `{s.target}`\n"
+                f"ℹ️ *Role:* {s.description}\n"
+            )
+        return self._p("\n".join(lines_en), "\n".join(lines_kh))
 
     @property
     def MAINTENANCE(self) -> str:

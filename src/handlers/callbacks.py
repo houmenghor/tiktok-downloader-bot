@@ -39,17 +39,7 @@ async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_
 
     await record_user(user_id, user.username, user.first_name or "")
 
-    # Only show folder picker if source is an uploaded .txt file AND >1 link
-    if source == "file" and len(links) > 1:
-        store_pending_save(user_id, links, quality)
-        await query.edit_message_text(
-            msg.choose_folder(len(links)),
-            parse_mode="Markdown",
-            reply_markup=folder_keyboard(),
-        )
-        return
-
-    # Regular text messages (and single link) — send directly to chat
+    # Always enqueue directly to send to Telegram chat
     default_label = "Audio" if quality == "audio" else "Video"
     for idx, url in enumerate(links, start=1):
         label = f"Link {idx}/{len(links)}" if len(links) > 1 else default_label
@@ -73,8 +63,7 @@ async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_
 async def handle_photo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """User pressed a photo format button (photos, audio, or photos+audio).
 
-    - Regular message: enqueue immediately and upload directly to chat.
-    - Uploaded .txt file with >1 link: offer folder picker / chat option.
+    All links are enqueued immediately and sent directly to the Telegram chat.
     """
     query = update.callback_query
     await query.answer()
@@ -102,17 +91,7 @@ async def handle_photo_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     await record_user(user_id, user.username, user.first_name or "")
 
-    # Only show folder picker if source is an uploaded .txt file AND >1 link
-    if source == "file" and len(links) > 1:
-        store_pending_save(user_id, links, format_choice)
-        await query.edit_message_text(
-            msg.choose_folder(len(links)),
-            parse_mode="Markdown",
-            reply_markup=folder_keyboard(),
-        )
-        return
-
-    # Regular text messages (and single link) — send directly to chat
+    # Always enqueue directly to send to Telegram chat
     for idx, url in enumerate(links, start=1):
         item_label = f"Link {idx}/{len(links)}" if len(links) > 1 else label
         job = DownloadJob(
@@ -133,7 +112,7 @@ async def handle_photo_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def handle_folder_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """User chose a save folder or chose to send to chat for a batch .txt download."""
+    """Legacy folder callback fallback (if user clicked old button)."""
     query = update.callback_query
     await query.answer()
 
@@ -144,11 +123,6 @@ async def handle_folder_callback(update: Update, context: ContextTypes.DEFAULT_T
     chat_id = update.effective_chat.id
     lang = await get_lang(user_id)
     msg = Msg(lang)
-
-    # callback_data = "folder_<path>" or "folder_chat"
-    folder_val = query.data[len("folder_"):]
-    save_locally = folder_val != "chat"
-    save_dir = folder_val if save_locally else None
 
     result = pop_pending_save(user_id)
     if not result:
@@ -167,8 +141,8 @@ async def handle_folder_callback(update: Update, context: ContextTypes.DEFAULT_T
             quality=quality,
             label=label,
             callback=process_job,
-            save_locally=save_locally,
-            save_dir=save_dir,
+            save_locally=False,
+            save_dir=None,
         )
         await download_queue.add_job(job)
 

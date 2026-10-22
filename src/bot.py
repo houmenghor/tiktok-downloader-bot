@@ -271,7 +271,7 @@ def _make_process_job(bot_app: Application):
 # ── App factory ───────────────────────────────────────────────────────────────
 
 def create_app() -> Application:
-    from src.handlers.commands import cmd_start, cmd_status, cmd_stats, cmd_help
+    from src.handlers.commands import cmd_start, cmd_status, cmd_stats, cmd_help, cmd_bypass
     from src.handlers.messages import handle_text, handle_document
     from src.handlers.callbacks import handle_quality_callback, handle_photo_callback, handle_folder_callback
     from src.handlers.language import cmd_language, handle_language_callback
@@ -290,6 +290,7 @@ def create_app() -> Application:
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("stats", cmd_stats))
+    app.add_handler(CommandHandler("bypass", cmd_bypass))
     app.add_handler(CommandHandler("language", cmd_language))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.Document.MimeType("text/plain"), handle_document))
@@ -307,6 +308,7 @@ def create_app() -> Application:
             BotCommand("help", "How to use this bot"),
             BotCommand("status", "Show how many downloads are in progress"),
             BotCommand("stats", "Show total users and downloads"),
+            BotCommand("bypass", "Show active bypass strategies"),
             BotCommand("language", "Change language / ប្ដូរភាសា"),
         ])
         if settings.configure_profile_on_start:

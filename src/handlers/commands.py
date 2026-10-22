@@ -36,22 +36,41 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from services.bypass import get_bypass_strategies
     lang = await get_lang(update.effective_user.id)
     if settings.maintenance:
         await update.message.reply_text(Msg(lang).MAINTENANCE, parse_mode="Markdown")
         return
     await update.message.reply_chat_action(ChatAction.TYPING)
     stats = await get_stats()
+    strategies = get_bypass_strategies()
+    bypass_count = len(strategies)
+
     if lang == "kh":
         text = (
             f"📊 *ស្ថិតិ Bot*\n\n"
             f"👤 ចំនួនអ្នកប្រើ: *{stats['total_users']}*\n"
-            f"⬇️ ចំនួន download សរុប: *{stats['total_downloads']}*"
+            f"⬇️ ចំនួន download សរុប: *{stats['total_downloads']}*\n"
+            f"🛡️ យុទ្ធសាស្ត្រ Bypass: *{bypass_count} សកម្ម* (/bypass)"
         )
     else:
         text = (
             f"📊 *Bot Stats*\n\n"
             f"👤 Total users: *{stats['total_users']}*\n"
-            f"⬇️ Total downloads: *{stats['total_downloads']}*"
+            f"⬇️ Total downloads: *{stats['total_downloads']}*\n"
+            f"🛡️ Bypass Strategies: *{bypass_count} Active* (/bypass)"
         )
     await update.message.reply_text(text, parse_mode="Markdown")
+
+
+async def cmd_bypass(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show details of all active bypass strategies and their roles."""
+    from services.bypass import get_bypass_strategies
+    lang = await get_lang(update.effective_user.id)
+    if settings.maintenance:
+        await update.message.reply_text(Msg(lang).MAINTENANCE, parse_mode="Markdown")
+        return
+    await update.message.reply_chat_action(ChatAction.TYPING)
+    strategies = get_bypass_strategies()
+    await update.message.reply_text(Msg(lang).bypass_info(strategies), parse_mode="Markdown")
+
