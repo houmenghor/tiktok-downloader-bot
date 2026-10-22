@@ -5,7 +5,10 @@ import re
 import time
 import urllib.parse
 import urllib.request
-from bs4 import BeautifulSoup
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
 
 from core.models import AudioMetadata
 from services.bypass.base import download_remote_file
@@ -96,21 +99,37 @@ def download_audio_ssstik(url: str, output_dir: str) -> AudioMetadata:
     if not os.path.exists(music_path) or os.path.getsize(music_path) == 0:
         raise RuntimeError("Downloaded audio file is empty from ssstik.")
 
-    soup = BeautifulSoup(html, "html.parser")
-    h2 = soup.find("h2")
-    author_name = h2.get_text(strip=True) if h2 else "TikTok"
-
+    author_name = "TikTok"
     cover_url = None
-    avatar = soup.find("img", class_="result_author") or soup.select_one("#avatar_and_text img")
-    if avatar:
-        src = avatar.get("src") or avatar.get("data-splide-lazy")
-        if src and "tikcdn.io/ssstik/a/" in src:
-            try:
-                b_part = src.split("tikcdn.io/ssstik/a/")[-1]
-                padded_b = b_part + "=" * (-len(b_part) % 4)
-                cover_url = base64.b64decode(padded_b).decode("utf-8")
-            except Exception:
-                cover_url = src
+
+    if BeautifulSoup:
+        soup = BeautifulSoup(html, "html.parser")
+        h2 = soup.find("h2")
+        author_name = h2.get_text(strip=True) if h2 else "TikTok"
+        avatar = soup.find("img", class_="result_author") or soup.select_one("#avatar_and_text img")
+        if avatar:
+            src = avatar.get("src") or avatar.get("data-splide-lazy")
+            if src and "tikcdn.io/ssstik/a/" in src:
+                try:
+                    b_part = src.split("tikcdn.io/ssstik/a/")[-1]
+                    padded_b = b_part + "=" * (-len(b_part) % 4)
+                    cover_url = base64.b64decode(padded_b).decode("utf-8")
+                except Exception:
+                    cover_url = src
+    else:
+        h2_match = re.search(r'<h2[^>]*>(.*?)</h2>', html, re.DOTALL | re.IGNORECASE)
+        if h2_match:
+            author_name = re.sub(r'<[^>]+>', '', h2_match.group(1)).strip() or "TikTok"
+        avatar_match = re.search(r'<img[^>]+(?:class=["\'][^"\']*result_author[^"\']*["\'][^>]+src=["\']([^"\']+)["\']|src=["\']([^"\']+)["\'][^>]+class=["\'][^"\']*result_author[^"\']*["\'])', html)
+        if avatar_match:
+            src = avatar_match.group(1) or avatar_match.group(2)
+            if src and "tikcdn.io/ssstik/a/" in src:
+                try:
+                    b_part = src.split("tikcdn.io/ssstik/a/")[-1]
+                    padded_b = b_part + "=" * (-len(b_part) % 4)
+                    cover_url = base64.b64decode(padded_b).decode("utf-8")
+                except Exception:
+                    cover_url = src
 
     if not cover_url:
         b64_slides = re.findall(r'data-splide-lazy=["\']https://tikcdn\.io/ssstik/s/([^"\']+)["\']', html)
